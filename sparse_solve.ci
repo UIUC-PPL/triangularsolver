@@ -5,13 +5,10 @@ mainmodule sparse_solve {
 	
 	mainchare Main {
 		entry Main(CkArgMsg *m);
-		entry void done(void);
-		entry void doneCheck(void);
-		entry void got_input(void);
+		entry [reductiontarget] void initDone(void);
 		entry void reportIn(void);
 	};
 	message DataMsg {
-//		int colInd[];
 		double data[];
 		int rowInd[];
 	};
@@ -35,22 +32,29 @@ mainmodule sparse_solve {
 	message DummyMsg {
 		int a;
 	};
-	message MapMsg {
-		int map_rows[];
-	};
 	message xValMsg {
 		double xVal[];
 	};
 	array [1D] ColumnsSolve {
 		entry ColumnsSolve();
-		entry void start(DummyMsg* msg);
+		entry void init() {
+			when get_input(InputMsg* msg1)
+				atomic {set_input(msg1);}
+			when get_deps(DepsMsg* msg2)
+				atomic {set_deps(msg2);}
+			if(diag) 
+				when get_section(CProxySection_ColumnsSolve nondiags, bool empty_sec)
+					atomic {set_section(nondiags, empty_sec);}
+			atomic {
+				contribute(CkCallback(CkReductionTarget(Main, initDone), mainProxy));
+			}
+		};
+		entry void start();
+		entry void indep_compute(DummyMsg* msg);
 		entry void get_input(InputMsg* msg);
 		entry void get_deps(DepsMsg* msg);
-		entry void get_map(MapMsg* msg);
 		entry void get_section(CProxySection_ColumnsSolve, bool);
 		entry void get_xval(xValMsg* msg);
 		entry void receiveData(DataMsg* msg);
-		entry void check(xValMsg* msg);
-		entry void status();
 	};
 };

@@ -11,12 +11,13 @@ using namespace std;
 /*array [1D]*/
 class ColumnsSolve : public CBase_ColumnsSolve
 {
+	ColumnsSolve_SDAG_CODE;
+	
 	MessagePool msgPool;
 	
 	int* rowInd;  // index of each row, one more for convenience
 	double* data; // data in rows sparse compressed
 	int *colInd; // column index of each element
-	
 	
 	int nMyCols;  // number of columns of this chare
 	int nMyRows; // number of rows
@@ -35,9 +36,6 @@ class ColumnsSolve : public CBase_ColumnsSolve
 	row_attr* nextRow; // for nondiags
 	int belowNumDone;
 	
-	bool input_got; // input arrived
-	bool deps_got; // next row dependencies arrived, for nondiags
-	bool section_got; // section proxy arrived, for diags
 	bool xval_got; // x values arrived, for nondiagonal chares
 	bool finished;
 	bool empty_nondiags;
@@ -50,15 +48,12 @@ class ColumnsSolve : public CBase_ColumnsSolve
 	
 	double* xVal; // value of x
 	double* rhs; // right-hand side for each column if diagonal chare
-	int* map; // for checking
 public:
 	ColumnsSolve():msgPool(thisProxy)
 	{
+		__sdag_init();
 		allDone=0;
 		belowNumDone=0;
-		input_got = false;
-		deps_got = false;
-		section_got = false;
 		xval_got = false;
 		finished = false;
 		empty_nondiags = false;
@@ -67,7 +62,7 @@ public:
 	}
 	ColumnsSolve(CkMigrateMessage *m):msgPool(thisProxy) {}
 	
-	void get_input(InputMsg* msg)
+	void set_input(InputMsg* msg)
 	{
 		int data_size = msg->rowInd[msg->num_rows];
 		// printf("chare: %d data size: %d\n",thisIndex, data_size);
@@ -87,7 +82,7 @@ public:
 		if (diag) {
 			rhs = new double[nMyCols];
 			for (int i=0; i<nMyCols; i++) {
-				rhs[i] = i+msg->start_col+1.0;
+				rhs[i] = 1.0;
 			}
 			arrived_is = new bool[nMyRows];
 			memset(arrived_is, 0, nMyRows*sizeof(bool));
@@ -104,33 +99,20 @@ public:
 		
 		arrived_data = new double[nMyRows];
 		arrived_size = 0;
-		input_got = true;
-		if ((!diag && deps_got) || (diag && section_got && deps_got)) {
-			mainProxy.got_input();
-		}
 		delete msg;
-		
 	}
 	// for nondiagonal chares
-	void get_deps(DepsMsg* msg)
+	void set_deps(DepsMsg* msg)
 	{
 		int dep_size = diag? first_below_rows+rest_below_rows: nMyRows;
 		memcpy(nextRow, msg->deps, (dep_size)*sizeof(row_attr));
 		delete msg;
-		deps_got = true;
-		if ((!diag &&input_got) || (diag && section_got && input_got)) {
-			mainProxy.got_input();
-		}
 	}
 	// for diagonal Chares
-	void get_section(CProxySection_ColumnsSolve nondiags, bool empty_sec)
+	void set_section(CProxySection_ColumnsSolve nondiags, bool empty_sec)
 	{
 		lower_section = nondiags;
-		section_got = true;
 		empty_nondiags = empty_sec;
-		if (input_got && deps_got) {
-			mainProxy.got_input();
-		}
 	}
 	void get_xval(xValMsg* msg)
 	{
@@ -155,7 +137,13 @@ public:
 			contribute();
 		}
 	}
-	void start(DummyMsg* msg)
+	void start() {
+		DummyMsg *msg = new (8*sizeof(int)) DummyMsg;
+		*(int*)CkPriorityPtr(msg) = 10000;
+		CkSetQueueing(msg, CK_QUEUEING_IFIFO);
+		thisProxy[thisIndex].indep_compute(msg);
+	}
+	void indep_compute(DummyMsg* msg)
 	{
 		if (diag && indep_row_no) {
 			int i=0;
@@ -391,7 +379,6 @@ public:
 			}
 			msgPool.flushMsgPool();
 			diag_compute(allDone);
-			
 		}
 		// nondiag
 		else if (xval_got) {
@@ -414,40 +401,7 @@ public:
 			memcpy(arrived_data+arrived_size, msg->data, (msg->size)*sizeof(double));
 			memcpy(arrived_rows+arrived_size, msg->rowInd, (msg->size)*sizeof(int));
 			arrived_size += msg->size;
-		}
-		
-		delete msg;
-	}
-
-	// for diags
-	void check(xValMsg* msg)
-	{
-		bool error=false;
-		int fails=0;
-		for (int i=0; i<nMyCols; i++) {
-			if (xVal[map[i]]!=msg->xVal[i]) {
-				fails++;
-				if (!error) {
-					error=true;
-					CkPrintf("Chare:%d first error:%d %f %f map:%d\n",thisIndex,i, xVal[map[i]], msg->xVal[i], map[i]);
-				}
-			}
-		}
-		if (error) {
-			CkPrintf("Chare:%d num errors:%d\n",thisIndex,fails);
-		}
-		delete msg;
-		mainProxy.doneCheck();
-	}
-	void get_map(MapMsg* msg)
-	{
-		map = new int[nMyCols];
-		memcpy(map, msg->map_rows, (nMyCols)*sizeof(int));
-		double *rhst=new double[nMyCols];
-		for (int i=0; i<nMyCols; i++) {
-			rhst[map[i]] = rhs[i];
-		}
-		rhs = rhst;
+		}	
 		delete msg;
 	}
 };

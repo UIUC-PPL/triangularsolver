@@ -47,11 +47,6 @@ class xValMsg : public CMessage_xValMsg
 public:
 	double *xVal; // solution x
 };
-class MapMsg : public CMessage_MapMsg
-{
-public:
-	int *map_rows; // row mappings
-};
 
 class MessagePool {
 	CProxy_ColumnsSolve thisProxy;

@@ -21,8 +21,6 @@ struct row_attr {
 #include "MessagePool.h"
 #include "ColumnsSolve.h"
 
-extern void readInput(char * fileName,double * &val, int * &rowind,int * &colptr,int & m, int&  n, int & nzl);
-
 // for each block chare keeps deps
 struct chare_deps_str {
 	int chare_no; // no. of chare
@@ -39,29 +37,18 @@ class Main : public CBase_Main
 	int total_chares; // all chares after creation
 	bool check;
 	double* xVal;
-	bool print_seq;
 public:
 	Main(CkArgMsg* m)
 	{
 		check=false;
-		print_seq = false;
 		//Process command-line arguments
-		nElements=2;
-		if(m->argc >1 ) nElements=atoi(m->argv[1]);
-		if(m->argc >2 ) strcpy(fileName, m->argv[2]);
-		if (m->argc>3) {
-			if(!strcmp(m->argv[3],"-seq")) {
-				if (m->argc>4 && !strcmp(m->argv[4],"-p")) {
-					print_seq = true;
-				}
-				seq_solve();
-				CkExit();
-			}
-			if (!strcmp(m->argv[3],"-check")) {
-				seq_solve();
-				check = true;
-			}
+		if(m->argc < 3) {
+			CkPrintf("arguments: num_chares filename\n");
+			CkExit();
 		}
+		nElements=atoi(m->argv[1]);
+		strcpy(fileName, m->argv[2]);
+		
 		delete m;
 		CkPrintf("reading file: %s\n",fileName);	
 		FILE * fp= fopen(fileName, "r");
@@ -78,8 +65,7 @@ public:
 
 		total_columns = ncols;
 		//Start the computation
-		CkPrintf("Running ColumnsSolve on %d processors for %d elements\n",
-				 CkNumPes(),nElements);
+		CkPrintf("Running ColumnsSolve on %d processors for %d elements\n", CkNumPes(),nElements);
 		mainProxy = thisProxy;
 		//	CProxy_BlockMap myMap=CProxy_BlockMap::ckNew();
 		CProxy_RRMap myMap=CProxy_RRMap::ckNew();
@@ -90,7 +76,6 @@ public:
 		CkCallback *cb = new CkCallback(CkIndex_Main::reportIn(), mainProxy);
 		arr.ckSetReductionClient(cb);
 		setup_input(fileName);
-		// arr.status();
 
 	};
 	void setup_input(char* fileName)
@@ -172,13 +157,11 @@ public:
 					curr_row = total_columns;
 				}
 			}
-
-			// if there are nondiagonal allocate dependencies
-			// if (firstBelowChunkRows!=0 || restBelowChunkRows!=0) {
-				chare_deps_str new_chare; new_chare.size=firstBelowChunkRows+restBelowChunkRows; new_chare.chare_no=i;
-				new_chare.nextRow=new row_attr[firstBelowChunkRows+restBelowChunkRows];
-				chare_deps.push_back(new_chare);
-			// }
+			
+			chare_deps_str new_chare; new_chare.size=firstBelowChunkRows+restBelowChunkRows; new_chare.chare_no=i;
+			new_chare.nextRow=new row_attr[firstBelowChunkRows+restBelowChunkRows];
+			chare_deps.push_back(new_chare);
+			
 			int my_rows = endCol-startCol+firstBelowChunkRows+restBelowChunkRows;
 			InputMsg* msg = new ((my_rows+1), entries, entries, my_rows) InputMsg;
 			memcpy(msg->data, tmpData, entries*sizeof(double));
@@ -195,11 +178,6 @@ public:
 			msg->rest_below_rows = restBelowChunkRows;
 			msg->rest_below_max_col = restBelowChunkMaxCol;
 			arr[i].get_input(msg);
-			if (check) {
-				MapMsg* mmsg = new (endCol-startCol) MapMsg;
-				memcpy(mmsg->map_rows, map_rows, (endCol-startCol)*sizeof(int));
-				arr[i].get_map(mmsg);
-			}
 			int dep_cols = endCol-startCol-indep_row_no;
 		//	CkPrintf("nzls:%d deps:%d total:%d frac:%f first_max:%d rest_max:%d first_rows:%d rest_rows:%d\n", entries, dep_cols, 
 		//			endCol-startCol, dep_cols/(double)(endCol-startCol), firstBelowChunkMaxCol, restBelowChunkMaxCol, firstBelowChunkRows
@@ -216,11 +194,8 @@ public:
 					tmpRow[tmp_curr_row] = entries;
 					int j = rowInd[curr_row]+lastRowInd[curr_row];
 					while (colsInd[j]<endCol) {
-						// tmpData[entries] = data[j];
+						tmpData[entries] = data[j];
 						tmpCol[entries] = map_rows[colsInd[j]-startCol];
-						// if (tmpCol[entries]>restBelowChunkMaxCol) {
-						//	restBelowChunkMaxCol = tmpCol[entries];
-						//}
 						j++;
 						entries++;
 					}
@@ -294,6 +269,7 @@ public:
 		CkPrintf("offdiags:%d out of %d nonzeros, fraction:%f\n",offdiags, nzl, offdiags/(double)nzl);
 		CkPrintf("diagdeps:%d out of %d rows, fraction:%f\n",diagdeps, m, diagdeps/(double)m);
 		total_chares = chareNo;
+		arr.init();
 		delete[] map_rows;
 		delete[] lastRowInd;
 		delete[] tmpRow;
@@ -305,113 +281,18 @@ public:
 		delete[] colsInd;
 		delete[] prev_in_row;
 	}
-	void done(void)
-	{
-		static int count=0;
-		count++;
-		if(count==total_chares) {
-			CkPrintf("All done in %f\n",CmiWallTimer()-start_time);
-			if (check) {
-				int bsize=total_columns/nElements;
-				for (int i=0; i<nElements-1; i++) {
-					xValMsg* msg = new (bsize) xValMsg;
-					memcpy(msg->xVal, &xVal[bsize*i], bsize*sizeof(double));
-					arr[i].check(msg);
-				}
-				int before = bsize*(nElements-1);
-				bsize = total_columns-before;
-				xValMsg* msg = new (bsize) xValMsg;
-				memcpy(msg->xVal, &xVal[before], bsize*sizeof(double));
-				arr[nElements-1].check(msg);
-				CkPrintf("checking solution:\n");
-				check=false;
-				count=0;
-			} else {
-				CkExit();
-			}
-		}
-	}
+
 	void reportIn()
 	{
 		CkPrintf("All done in %f\n",CmiWallTimer()-start_time);
-		if (check) {
-			int bsize=total_columns/nElements;
-			for (int i=0; i<nElements-1; i++) {
-				xValMsg* msg = new (bsize) xValMsg;
-				memcpy(msg->xVal, &xVal[bsize*i], bsize*sizeof(double));
-				arr[i].check(msg);
-			}
-			int before = bsize*(nElements-1);
-			bsize = total_columns-before;
-			xValMsg* msg = new (bsize) xValMsg;
-			memcpy(msg->xVal, &xVal[before], bsize*sizeof(double));
-			arr[nElements-1].check(msg);
-			CkPrintf("checking solution:\n");
-			check=false;
-		} else {
-			CkExit();
-		}
-		
+		CkExit();
 	}
-	void doneCheck(void)
+	void initDone(void)
 	{
-		static int count=0;
-		count++;
-		if(count==nElements) {
-			CkExit();
-		}
-	}
-	void got_input(void)
-	{
-		static int count=0;
-		count++;
-		if(count==total_chares) {
-			//CkEntryOptions opts;
-			//opts.setPriority(1);
-			start_time = CmiWallTimer();
-			for(int i=0; i<nElements; i++)
-			{
-			DummyMsg *msg = new (8*sizeof(int)) DummyMsg;
-			*(int*)CkPriorityPtr(msg) = 10000;
-			CkSetQueueing(msg, CK_QUEUEING_IFIFO);
-				arr[i].start(msg);
-			}
-		}
+		start_time = CmiWallTimer();
+		arr.start();
 	};
-	void seq_solve()
-	{
-		double* data; // data in row sparse compressed
-		int* rowInd;  // row index of each element
-		int *colsInd; // index of each column in data array, one more than columns for convenience
-		// read input
-		int m,n, nzl;
-		readInput(fileName, data, rowInd, colsInd ,m, n, nzl);
-		double *rhs = new double[m];
-		for (int i=0; i<m; i++) {
-			rhs[i]=i+1.0;
-		}
-		xVal = new double[n];
-		memset(xVal, 0, n*sizeof(double));
-		
-		double start=CmiWallTimer();
-		
-		for (int i=0; i<n; i++) {
-			double val=0;
-			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++) {
-				val += xVal[colsInd[j]]*data[j];
-			}
-			xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
-			if (print_seq)
-				printf("x[%d]=%f ",i,xVal[i]);
-		}
-		if (print_seq)
-			printf("\n");
-		printf("seq time: %f\n",CmiWallTimer()-start);
-		delete[] data;
-		delete[] rowInd;
-		delete[] colsInd;
-		delete[] rhs;
-	}
+
 	void reorder(int *map_rows, int& no_indeps, int startCol, int endCol, row_attr* prev_in_row, int* rowInd,
 				int* colInd, double* data,double* tmpData,int* tmpRow,int* tmpCol,
 				 bool* tmpDep, vector<chare_deps_str> &chare_deps, int chare_no, int *lastRowInd)
@@ -563,7 +444,36 @@ public:
 			}
 		}
 	}
+	void readInput(char * fileName, double * & val, int * &rowind,int * & colptr, int & m, int&  n, int & nzl){
+		int i,j;
+		FILE * fp= fopen(fileName, "r");
+		if(fp==NULL)
+		{
+			printf("file read error!\n");
+		}
+		/*first line */
+		fscanf(fp,"%d",&m);
+		fscanf(fp,"%d",&n);
+		fscanf(fp,"%d",&nzl);
+		val = new double[nzl];
+		rowind = new int[m+1];
+		colptr = new int[nzl];
+		/* second line */
+		for(i=0;i<m+1;i++){
+			fscanf(fp,"%d",&rowind[i]);
+		}
+		/*third line */
+		for(i=0;i<nzl;i++){
+			fscanf(fp,"%d",&colptr[i]);
+		}
+		/* fourth line */
+		for(i=0;i<nzl;i++){
+			fscanf(fp,"%lf",&val[i]);
+			if (val[i]<1.e-10 && val[i]>-1.e-10) 
+				val[i]=0.0;
+		}
+		fclose(fp);
+	}
 };
-
 
 #include "sparse_solve.def.h"

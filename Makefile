@@ -1,7 +1,7 @@
 CHARMDIR = $(HOME)/charm
 CHARMC=$(CHARMDIR)/bin/charmc $(OPTS)
 
-OBJS = sparse_solve.o readInput.o
+OBJS = sparse_solve.o 
 
 all: sparse_solve
 
@@ -16,9 +16,6 @@ clean:
 
 sparse_solve.o: sparse_solve.C ColumnsSolve.h sparse_solve.decl.h MessagePool.h
 	$(CHARMC) -c sparse_solve.C
-
-readInput.o: readInput.C
-	$(CHARMC) -c readInput.C
 
 test: all
 	./charmrun sparse_solve +p4 10 $(TESTOPTS)
