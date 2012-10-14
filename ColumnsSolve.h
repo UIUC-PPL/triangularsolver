@@ -3,7 +3,6 @@
  December, 2011
  */
 
-
 #define MAX(a, b) (a>=b?a:b)
 #include <assert.h>
 #include <vector>
@@ -21,8 +20,6 @@ class ColumnsSolve : public CBase_ColumnsSolve
 	
 	int nMyCols;  // number of columns of this chare
 	int nMyRows; // number of rows
-	// int myColStart; // my first column number global
-	// int myRowStart; // my first row number
 	bool diag; // is diagonal Chare
 	int indep_row_no; // for diag
 	int first_below_rows;
@@ -31,7 +28,6 @@ class ColumnsSolve : public CBase_ColumnsSolve
 	int rest_below_max_col;
 	bool first_below_done;
 	bool rest_below_done;
-	// bool* below_done;
 	
 	int allDone; // done rows
 	bool* row_dep; // is each row dependent
@@ -76,13 +72,10 @@ public:
 		int data_size = msg->rowInd[msg->num_rows];
 		// printf("chare: %d data size: %d\n",thisIndex, data_size);
 		data = new double[data_size];
-		for (int i=0; i<data_size; i++) {
-			data[i] = 1.;
-		}
 		colInd = new int[data_size];
 		rowInd = new int[msg->num_rows+1];
 		row_dep = new bool[msg->num_rows];
-		// memcpy(data, msg->data, data_size*sizeof(double));
+		memcpy(data, msg->data, data_size*sizeof(double));
 		memcpy(colInd, msg->colInd, data_size*sizeof(int));
 		memcpy(rowInd, msg->rowInd, (msg->num_rows+1)*sizeof(int));
 		memcpy(row_dep, msg->dep, (msg->num_rows)*sizeof(bool));
@@ -102,9 +95,6 @@ public:
 			first_below_max_col = msg->first_below_max_col;
 			rest_below_rows = msg->rest_below_rows;
 			rest_below_max_col = msg->rest_below_max_col;
-			//below_done = new bool[first_below_rows+rest_below_rows];
-			//memset(below_done, 0, (first_below_rows+rest_below_rows)*sizeof(bool));
-			// analyse_indeps();
 			nextRow = new row_attr[first_below_rows+rest_below_rows];
 			arrived_rows = new int[first_below_rows+rest_below_rows];
 		} else {
@@ -162,8 +152,6 @@ public:
 		msgPool.flushMsgPool();
 		if (allDone==nMyRows && !finished) {
 			finished = true;
-			// print_check();
-			// mainProxy.done();
 			contribute();
 		}
 	}
@@ -196,7 +184,6 @@ public:
 					}
 					msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 					belowNumDone++;
-					// below_done[i-nMyCols] = true;
 				}
 				first_below_done = true;
 				msgPool.flushMsgPool();
@@ -211,10 +198,6 @@ public:
 					xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 				}
 				for (int i=nMyCols+first_below_rows; i<nMyCols+first_below_rows+rest_below_rows; i++) {
-					// if (below_done[i-nMyCols]) {
-					//	printf("----??\n");
-					//	continue;
-					//}
 					double val=0;
 					if (row_dep[i]) {
 						if (arrived_is[i]) {
@@ -230,7 +213,6 @@ public:
 					}
 					msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 					belowNumDone++;
-					// below_done[i-nMyCols] = true;
 				}
 				rest_below_done = true;
 				msgPool.flushMsgPool();
@@ -284,7 +266,6 @@ public:
 				}
 				msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 				belowNumDone++;
-				// below_done[i-nMyCols] = true;
 			}
 			first_below_done = true;
 			msgPool.flushMsgPool();
@@ -320,7 +301,6 @@ public:
 				}
 				msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 				belowNumDone++;
-				// below_done[i-nMyCols] = true;
 			}
 			rest_below_done = true;
 			msgPool.flushMsgPool();
@@ -355,8 +335,6 @@ public:
 			}
 			if (belowNumDone==first_below_rows+rest_below_rows) {
 				finished = true;	
-				// print_check();
-				// mainProxy.done();
 				contribute();
 			}
 		}
@@ -379,15 +357,12 @@ public:
 		msgPool.flushMsgPool();
 		if (allDone==nMyRows  && !finished) {
 			finished = true;
-			// print_check();
-			// mainProxy.done();
 			contribute();
 		}
 	}
 	void receiveData(DataMsg* msg)
 	{
 		if (diag) {
-			// 
 			for (int i=0; i<msg->size; i++) {
 				double val = msg->data[i];
 				int row = msg->rowInd[i];
@@ -411,9 +386,6 @@ public:
 				} 
 				else {
 					arrived_data[row] = val;
-					// if (arrived_is[row]==true) {
-					//	printf("index:%d row:%d\n",thisIndex,row);
-					//}
 					arrived_is[row] = true;
 				}	
 			}
@@ -435,8 +407,6 @@ public:
 			msgPool.flushMsgPool();
 			if (allDone==nMyRows  && !finished) {
 				finished = true;
-				// print_check();
-				// mainProxy.done();
 				contribute();
 			}
 		} // xvalues not arrived yet
@@ -448,29 +418,7 @@ public:
 		
 		delete msg;
 	}
-	
-	/*	int print_col_done()
-	 {
-	 for (int i=0; i<nMyCols; i++) {
-	 if (i%5==0) {
-	 printf("%d:",i);
-	 }
-	 printf("%d ",doneColumn(i));
-	 if (i%30==0 && i) {
-	 printf("\n");
-	 }
-	 }
-	 printf("\n");
-	 return -1;
-	 }
-	 */
-	void print_check()
-	{
-		CkPrintf("done: %d\n",thisIndex);
-		//if ( thisIndex==44) {
-		//	CkPrintf("Chare:%d cols:%d rows:%d done:%d finished:%b\n",thisIndex, nMyCols, nMyRows, finished);
-		//}
-	}
+
 	// for diags
 	void check(xValMsg* msg)
 	{
@@ -501,46 +449,5 @@ public:
 		}
 		rhs = rhst;
 		delete msg;
-	}
-	void analyse_indeps()
-	{
-		vector<int> depvec;
-		int indeps=0;
-		// ignore first
-		int firstdep = -1;
-		for (int i=0; i<nMyCols; i++) {
-			bool dep=false;
-			if (row_dep[i]) {
-				depvec.push_back(i);
-				if (firstdep==-1) {
-					firstdep=i;
-				}
-				continue;
-			}
-			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++) {
-				for (int k=0; k<depvec.size(); k++) {
-					if (colInd[j]==depvec[k]) {
-						dep=true;
-						depvec.push_back(i);
-						if (firstdep==-1) {
-							firstdep=i;
-						}
-						break;
-					}
-				}
-				if (dep==true) {
-					break;
-				}
-			}
-			if (!dep) {
-				indeps++;
-			}
-		}
-		CkPrintf("chare:%d indeps:%d of %d rows, first_dep:%d fraction:%f\n",thisIndex, 
-				 indeps, nMyCols, firstdep, indeps/(double)nMyCols);
-	}
-	void status()
-	{
-		CkPrintf("chare:%d done:%d\n",thisIndex, allDone);
 	}
 };

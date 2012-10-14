@@ -20,7 +20,7 @@ class InputMsg : public CMessage_InputMsg
 public:
 	int* rowInd;  // row ptr
 	int *colInd; // column number for each element
-//    double* data; // data
+	double* data; // data
 	bool *dep; // dependency of each column
 	int num_rows;
 	int start_col;

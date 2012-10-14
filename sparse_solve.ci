@@ -18,7 +18,7 @@ mainmodule sparse_solve {
 	message InputMsg {
 		int rowInd[];
 		int colInd[];
-//		double data[];
+		double data[];
 		bool dep[];
 		int num_rows;
 		int num_cols;

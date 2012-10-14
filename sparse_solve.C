@@ -22,8 +22,6 @@ struct row_attr {
 #include "ColumnsSolve.h"
 
 extern void readInput(char * fileName,double * &val, int * &rowind,int * &colptr,int & m, int&  n, int & nzl);
-extern void readInput(char * fileName, int * &rowind,int * &colptr,int & m, int&  n, int & nzl);
-
 
 // for each block chare keeps deps
 struct chare_deps_str {
@@ -102,7 +100,7 @@ public:
 		int *colsInd; // index of each column in data array, one more than columns for convenience
 		// read input
 		int m,n, nzl;
-		readInput(fileName, rowInd, colsInd ,m, n, nzl);
+		readInput(fileName, data, rowInd, colsInd ,m, n, nzl);
 		// number of local columns
 		int num_loc_cols = (total_columns/nElements);
 		int *lastRowInd = new int[m];
@@ -113,10 +111,7 @@ public:
 		int *tmpRow = new int[m+1];
 		bool *tmpDep = new bool[m];
 		int chareNo = nElements;
-		int *map_rows = new int[m];//2*num_loc_cols];
-		//for (int i=0; i<2*num_loc_cols; i++) {
-		//	map_rows[i]=i;
-		//}
+		int *map_rows = new int[m];
 
 		vector<chare_deps_str> chare_deps; // nexts for all block chares
 		row_attr* prev_in_row = new row_attr[m]; // previous chare in that row
@@ -185,8 +180,8 @@ public:
 				chare_deps.push_back(new_chare);
 			// }
 			int my_rows = endCol-startCol+firstBelowChunkRows+restBelowChunkRows;
-			InputMsg* msg = new ((my_rows+1), entries, my_rows) InputMsg;
-			// memcpy(msg->data, tmpData, entries*sizeof(double));
+			InputMsg* msg = new ((my_rows+1), entries, entries, my_rows) InputMsg;
+			memcpy(msg->data, tmpData, entries*sizeof(double));
 			memcpy(msg->colInd, tmpCol, entries*sizeof(int));
 			memcpy(msg->rowInd, tmpRow,(my_rows+1)*sizeof(int));
 			memcpy(msg->dep, tmpDep,(my_rows)*sizeof(bool));
@@ -271,9 +266,9 @@ public:
 				chare_deps_str new_chare; new_chare.size=tmp_curr_row; new_chare.chare_no=chareNo;
 				new_chare.nextRow=new row_attr[tmp_curr_row];
 				chare_deps.push_back(new_chare);
-				InputMsg* msg = new ((tmp_curr_row+1), entries, tmp_curr_row) InputMsg;
+				InputMsg* msg = new ((tmp_curr_row+1), entries, entries, tmp_curr_row) InputMsg;
 				memcpy(msg->dep, tmpDep, tmp_curr_row*sizeof(bool));
-				// memcpy(msg->data, tmpData, entries*sizeof(double));
+				memcpy(msg->data, tmpData, entries*sizeof(double));
 				memcpy(msg->colInd, tmpCol, entries*sizeof(int));
 				memcpy(msg->rowInd, tmpRow,(tmp_curr_row+1)*sizeof(int));
 				msg->num_cols = num_loc_cols;
@@ -302,10 +297,10 @@ public:
 		delete[] map_rows;
 		delete[] lastRowInd;
 		delete[] tmpRow;
-		// delete[] tmpData;
+		delete[] tmpData;
 		delete[] tmpCol;
 		delete[] tmpDep;
-		// delete[] data;
+		delete[] data;
 		delete[] rowInd;
 		delete[] colsInd;
 		delete[] prev_in_row;
@@ -390,14 +385,10 @@ public:
 		int *colsInd; // index of each column in data array, one more than columns for convenience
 		// read input
 		int m,n, nzl;
-		readInput(fileName, rowInd, colsInd ,m, n, nzl);
-		data=new double[rowInd[m]];
-		for (int i=0; i<rowInd[m]; i++) {
-			data[i] = 1.;
-		}
+		readInput(fileName, data, rowInd, colsInd ,m, n, nzl);
 		double *rhs = new double[m];
 		for (int i=0; i<m; i++) {
-			rhs[i]=i+1;
+			rhs[i]=i+1.0;
 		}
 		xVal = new double[n];
 		memset(xVal, 0, n*sizeof(double));
@@ -465,7 +456,7 @@ public:
 			if (mark_dep[i-startCol]) {
 				map_rows[i-startCol] = target_row;
 				for (int j=rowInd[i]+lastRowInd[i]; j<rowInd[i+1]; j++) {
-					// tmpData[target_nzls] = data[j];
+					tmpData[target_nzls] = data[j];
 					tmpCol[target_nzls] = map_rows[colInd[j]-startCol];
 					target_nzls++;
 				}
@@ -492,9 +483,6 @@ public:
 	{
 		// place dependencies
 		int j=rowInd[row+1]-2;
-		//while (colInd[j]<startCol || colInd[j]==row) {
-		//	j--;
-		//}
 		for (; j>=rowInd[row]+lastRowInd[row]; j--) {
 			if (colInd[j]<startCol || colInd[j]==row) {
 				continue;
@@ -511,7 +499,7 @@ public:
 		mark_done[row-startCol] = true;
 		
 		for (int j= rowInd[row]+lastRowInd[row]; j<rowInd[row+1]; j++) {
-			// tmpData[target_nzls] = data[j];
+			tmpData[target_nzls] = data[j];
 			tmpCol[target_nzls] = map_rows[colInd[j]-startCol];
 			target_nzls++;
 		}
@@ -540,7 +528,7 @@ public:
 		for (int i=nextChareFirstRow; i<nextChareLastRow; i++) {
 			int j=rowInd[i]+lastRowInd[i];
 			while (colInd[j]<endCol) {
-				// tmpData[entries] = data[j];
+				tmpData[entries] = data[j];
 				tmpCol[entries] = map_rows[colInd[j]-startCol];
 				if (tmpCol[entries]>max_col) {
 					max_col = tmpCol[entries];
