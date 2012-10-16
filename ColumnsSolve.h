@@ -62,22 +62,20 @@ public:
 	}
 	ColumnsSolve(CkMigrateMessage *m):msgPool(thisProxy) {}
 	
-	void set_input(InputMsg* msg)
+	void set_input(int num_entries, int num_rows, int num_cols, double m_data[], int m_colInd[], 
+				   int m_rowInd[],	bool dep[],	bool m_diag, int m_indep_row_no, int m_first_below_rows,
+				   int m_first_below_max_col, int m_rest_below_rows, int m_rest_below_max_col)
 	{
-		int data_size = msg->rowInd[msg->num_rows];
-		// printf("chare: %d data size: %d\n",thisIndex, data_size);
-		data = new double[data_size];
-		colInd = new int[data_size];
-		rowInd = new int[msg->num_rows+1];
-		row_dep = new bool[msg->num_rows];
-		memcpy(data, msg->data, data_size*sizeof(double));
-		memcpy(colInd, msg->colInd, data_size*sizeof(int));
-		memcpy(rowInd, msg->rowInd, (msg->num_rows+1)*sizeof(int));
-		memcpy(row_dep, msg->dep, (msg->num_rows)*sizeof(bool));
-		diag = msg->diag;
-		nMyCols = msg->num_cols;
-		nMyRows = msg->num_rows;
-		indep_row_no = msg->indep_row_no;
+		data = m_data;
+		nMyCols = num_cols;
+		nMyRows = num_rows;
+		
+		colInd = m_colInd;
+		rowInd = m_rowInd;
+		row_dep = dep;
+		diag = m_diag;
+		indep_row_no = m_indep_row_no;
+		
 		xVal = new double[nMyCols];
 		if (diag) {
 			rhs = new double[nMyCols];
@@ -86,10 +84,10 @@ public:
 			}
 			arrived_is = new bool[nMyRows];
 			memset(arrived_is, 0, nMyRows*sizeof(bool));
-			first_below_rows = msg->first_below_rows;
-			first_below_max_col = msg->first_below_max_col;
-			rest_below_rows = msg->rest_below_rows;
-			rest_below_max_col = msg->rest_below_max_col;
+			first_below_rows = m_first_below_rows;
+			first_below_max_col = m_first_below_max_col;
+			rest_below_rows = m_rest_below_rows;
+			rest_below_max_col = m_rest_below_max_col;
 			nextRow = new row_attr[first_below_rows+rest_below_rows];
 			arrived_rows = new int[first_below_rows+rest_below_rows];
 		} else {
@@ -99,7 +97,6 @@ public:
 		
 		arrived_data = new double[nMyRows];
 		arrived_size = 0;
-		delete msg;
 	}
 	// for nondiagonal chares
 	void set_deps(DepsMsg* msg)
@@ -138,12 +135,12 @@ public:
 		}
 	}
 	void start() {
-		DummyMsg *msg = new (8*sizeof(int)) DummyMsg;
-		*(int*)CkPriorityPtr(msg) = 10000;
-		CkSetQueueing(msg, CK_QUEUEING_IFIFO);
-		thisProxy[thisIndex].indep_compute(msg);
+		CkEntryOptions opts;
+		opts.setQueueing(CK_QUEUEING_FIFO);
+		opts.setPriority(10);
+		thisProxy[thisIndex].indep_compute();
 	}
-	void indep_compute(DummyMsg* msg)
+	void indep_compute()
 	{
 		if (diag && indep_row_no) {
 			int i=0;

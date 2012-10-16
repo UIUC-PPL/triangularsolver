@@ -12,25 +12,9 @@ mainmodule sparse_solve {
 		double data[];
 		int rowInd[];
 	};
-	message InputMsg {
-		int rowInd[];
-		int colInd[];
-		double data[];
-		bool dep[];
-		int num_rows;
-		int num_cols;
-		bool diag;
-		int indep_row_no;
-		int first_below_rows;
-		int first_below_max_col;
-		int rest_below_rows;
-		int rest_below_max_col;
-	};
+
 	message DepsMsg {
 		row_attr deps[];
-	};
-	message DummyMsg {
-		int a;
 	};
 	message xValMsg {
 		double xVal[];
@@ -38,8 +22,11 @@ mainmodule sparse_solve {
 	array [1D] ColumnsSolve {
 		entry ColumnsSolve();
 		entry void init() {
-			when get_input(InputMsg* msg1)
-				atomic {set_input(msg1);}
+			when get_input(int num_entries, int num_rows, int num_cols, double data[num_entries], int colInd[num_entries], 
+			int rowInd[num_rows+1],	bool dep[num_rows],	bool diag,	int indep_row_no,	int first_below_rows, int first_below_max_col,
+			int rest_below_rows, int rest_below_max_col)
+				atomic {set_input(num_entries, num_rows, num_cols, data, colInd, rowInd, dep, diag, indep_row_no, 
+				first_below_rows, first_below_max_col, rest_below_rows, rest_below_max_col);}
 			when get_deps(DepsMsg* msg2)
 				atomic {set_deps(msg2);}
 			if(diag) 
@@ -50,8 +37,10 @@ mainmodule sparse_solve {
 			}
 		};
 		entry void start();
-		entry void indep_compute(DummyMsg* msg);
-		entry void get_input(InputMsg* msg);
+		entry void indep_compute();
+		entry void get_input(int num_entries, int num_rows, int num_cols, double data[num_entries], int colInd[num_entries], 
+			int rowInd[num_rows+1],	bool dep[num_rows],	bool diag,	int indep_row_no,	int first_below_rows, int first_below_max_col,
+			int rest_below_rows, int rest_below_max_col);
 		entry void get_deps(DepsMsg* msg);
 		entry void get_section(CProxySection_ColumnsSolve, bool);
 		entry void get_xval(xValMsg* msg);

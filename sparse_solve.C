@@ -163,21 +163,10 @@ public:
 			chare_deps.push_back(new_chare);
 			
 			int my_rows = endCol-startCol+firstBelowChunkRows+restBelowChunkRows;
-			InputMsg* msg = new ((my_rows+1), entries, entries, my_rows) InputMsg;
-			memcpy(msg->data, tmpData, entries*sizeof(double));
-			memcpy(msg->colInd, tmpCol, entries*sizeof(int));
-			memcpy(msg->rowInd, tmpRow,(my_rows+1)*sizeof(int));
-			memcpy(msg->dep, tmpDep,(my_rows)*sizeof(bool));
-			msg->num_cols = endCol-startCol;
-			msg->num_rows = my_rows;
-			msg->start_col = startCol;
-			msg->diag = true;
-			msg->indep_row_no = indep_row_no;
-			msg->first_below_rows = firstBelowChunkRows;
-			msg->first_below_max_col = firstBelowChunkMaxCol;
-			msg->rest_below_rows = restBelowChunkRows;
-			msg->rest_below_max_col = restBelowChunkMaxCol;
-			arr[i].get_input(msg);
+			
+			arr[i].get_input(entries, my_rows, endCol-startCol, tmpData, tmpCol, tmpRow, tmpDep, true, indep_row_no, 
+							 firstBelowChunkRows, firstBelowChunkMaxCol, restBelowChunkRows, restBelowChunkMaxCol);
+			
 			int dep_cols = endCol-startCol-indep_row_no;
 		//	CkPrintf("nzls:%d deps:%d total:%d frac:%f first_max:%d rest_max:%d first_rows:%d rest_rows:%d\n", entries, dep_cols, 
 		//			endCol-startCol, dep_cols/(double)(endCol-startCol), firstBelowChunkMaxCol, restBelowChunkMaxCol, firstBelowChunkRows
@@ -241,16 +230,8 @@ public:
 				chare_deps_str new_chare; new_chare.size=tmp_curr_row; new_chare.chare_no=chareNo;
 				new_chare.nextRow=new row_attr[tmp_curr_row];
 				chare_deps.push_back(new_chare);
-				InputMsg* msg = new ((tmp_curr_row+1), entries, entries, tmp_curr_row) InputMsg;
-				memcpy(msg->dep, tmpDep, tmp_curr_row*sizeof(bool));
-				memcpy(msg->data, tmpData, entries*sizeof(double));
-				memcpy(msg->colInd, tmpCol, entries*sizeof(int));
-				memcpy(msg->rowInd, tmpRow,(tmp_curr_row+1)*sizeof(int));
-				msg->num_cols = num_loc_cols;
-				msg->num_rows = tmp_curr_row;
-				msg->diag = false;
 				arr[chareNo].insert();
-				arr[chareNo++].get_input(msg);
+				arr[chareNo++].get_input(entries, tmp_curr_row, num_loc_cols, tmpData, tmpCol, tmpRow, tmpDep, false, 0,0,0, 0,0);
 			}
 			// send section proxy to diag element
 			// printf("max_res_col:%d total:%d\n", restBelowChunkMaxCol, endCol-startCol);
@@ -448,9 +429,7 @@ public:
 		int i,j;
 		FILE * fp= fopen(fileName, "r");
 		if(fp==NULL)
-		{
 			printf("file read error!\n");
-		}
 		/*first line */
 		fscanf(fp,"%d",&m);
 		fscanf(fp,"%d",&n);

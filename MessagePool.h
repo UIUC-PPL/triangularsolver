@@ -9,33 +9,11 @@
 class DataMsg : public CMessage_DataMsg
 {
 public:
-	// int *colInd; // column number for each element, or colptr in case of input
     double* data; // data
 	int* rowInd;  // row number for each element
 	int size;
 };
 
-class InputMsg : public CMessage_InputMsg
-{
-public:
-	int* rowInd;  // row ptr
-	int *colInd; // column number for each element
-	double* data; // data
-	bool *dep; // dependency of each column
-	int num_rows;
-	int start_col;
-	int num_cols;
-	bool diag; // is diagnoal Chare?
-	int indep_row_no; // number of independent rows
-	int first_below_rows;
-	int first_below_max_col;
-	int rest_below_rows;
-	int rest_below_max_col;
-};
-
-class DummyMsg : public CMessage_DummyMsg
-{
-};
 class DepsMsg : public CMessage_DepsMsg
 {
 public:
@@ -50,7 +28,6 @@ public:
 
 class MessagePool {
 	CProxy_ColumnsSolve thisProxy;
-	
 	
 	// message pool data structures
 	double* out_data; // store data to be sent out
@@ -69,7 +46,6 @@ public:
 		thisProxy = p;
 		out_data = new double[NO_MSG_SEGS*MSG_SEG_SIZE];
 		out_rowInd = new int[NO_MSG_SEGS*MSG_SEG_SIZE];
-//		out_colsInd = new int[NO_MSG_SEGS*MSG_SEG_SIZE];
 		out_size = new int[NO_MSG_SEGS];
 		memset(out_size, 0, NO_MSG_SEGS*sizeof(int));
 		index_out = new int[NO_MSG_SEGS];
@@ -108,7 +84,6 @@ public:
 		out_ind += chare_index*MSG_SEG_SIZE;
 		out_data[out_ind] = val;
 		out_rowInd[out_ind] = row;
-		// out_colsInd[out_ind] = col;//convertToGlobalColumn(col);
 		// check for full buffer
 		if (out_size[lastChare_ind]==MSG_SEG_SIZE) {
 			flushMsgPool();
@@ -133,19 +108,13 @@ public:
 		for (int i=0; i<no_pe_segs; i++) {
 			// one integer for priority
 			DataMsg *msg = new ( out_size[i], out_size[i], 8*sizeof(int)) DataMsg;
-			// DataMsg *msg = new ( out_size[i], out_size[i]) DataMsg;
 			msg->size = out_size[i];
 			memcpy(msg->data, &out_data[i*MSG_SEG_SIZE], out_size[i]*sizeof(double));
 			memcpy(msg->rowInd, &out_rowInd[i*MSG_SEG_SIZE],out_size[i]*sizeof(int));
-			// assuming first has smallest row index, which is not general!!!
-			// *(int*)CkPriorityPtr(msg) = msg->rowInd[0];
-			//*(int*)CkPriorityPtr(msg) = ~index_out[i];
-//			*(int*)CkPriorityPtr(msg) = ~msg->colInd[msg->size-1];
 			*(int*)CkPriorityPtr(msg) = 0;
 			CkSetQueueing(msg, CK_QUEUEING_IFIFO);
 			thisProxy[index_out[i]].receiveData(msg);
 		}
 		no_pe_segs=0;
 	}
-
 };
