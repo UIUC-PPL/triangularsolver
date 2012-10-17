@@ -66,16 +66,18 @@ public:
 				   int m_rowInd[],	bool dep[],	bool m_diag, int m_indep_row_no, int m_first_below_rows,
 				   int m_first_below_max_col, int m_rest_below_rows, int m_rest_below_max_col)
 	{
-		data = m_data;
+		data = new double[num_entries];
+		colInd = new int[num_entries];
+		rowInd = new int[num_rows+1];
+		row_dep = new bool[num_rows];
+		memcpy(data, m_data, num_entries*sizeof(double));
+		memcpy(colInd, m_colInd, num_entries*sizeof(int));
+		memcpy(rowInd, m_rowInd, (num_rows+1)*sizeof(int));
+		memcpy(row_dep, dep, (num_rows)*sizeof(bool));
 		nMyCols = num_cols;
 		nMyRows = num_rows;
-		
-		colInd = m_colInd;
-		rowInd = m_rowInd;
-		row_dep = dep;
 		diag = m_diag;
 		indep_row_no = m_indep_row_no;
-		
 		xVal = new double[nMyCols];
 		if (diag) {
 			rhs = new double[nMyCols];
@@ -98,49 +100,18 @@ public:
 		arrived_data = new double[nMyRows];
 		arrived_size = 0;
 	}
-	// for nondiagonal chares
-	void set_deps(DepsMsg* msg)
+	void set_deps(int dep_size, row_attr deps[])
 	{
-		int dep_size = diag? first_below_rows+rest_below_rows: nMyRows;
-		memcpy(nextRow, msg->deps, (dep_size)*sizeof(row_attr));
-		delete msg;
+		memcpy(nextRow, deps, (dep_size)*sizeof(row_attr));
 	}
-	// for diagonal Chares
+
 	void set_section(CProxySection_ColumnsSolve nondiags, bool empty_sec)
 	{
 		lower_section = nondiags;
 		empty_nondiags = empty_sec;
 	}
-	void get_xval(xValMsg* msg)
-	{
-		memcpy(xVal, msg->xVal, (nMyCols)*sizeof(double));
-		delete msg;
-		xval_got = true;
-		// start computation
-		nondiag_compute(0);
-		for (int i=0; i<arrived_size; i++) {
-			double val = arrived_data[i];
-			int row = arrived_rows[i];
-			for (int j=rowInd[row]; j<rowInd[row+1]; j++) {
-				val += data[j]*xVal[colInd[j]];
-			}
-			msgPool.add(nextRow[row].chare, nextRow[row].row, val);
-			
-			allDone++;
-		}
-		msgPool.flushMsgPool();
-		if (allDone==nMyRows && !finished) {
-			finished = true;
-			contribute();
-		}
-	}
-	void start() {
-		CkEntryOptions opts;
-		opts.setQueueing(CK_QUEUEING_FIFO);
-		opts.setPriority(10);
-		thisProxy[thisIndex].indep_compute();
-	}
-	void indep_compute()
+	
+	void my_indep_compute()
 	{
 		if (diag && indep_row_no) {
 			int i=0;
@@ -324,10 +295,9 @@ public:
 			}
 		}
 	}
-	void nondiag_compute(int start)
+	void nondiag_compute()
 	{
-		int i;
-		for (int i=start; i<nMyRows; i++) {
+		for (int i=0; i<nMyRows; i++) {
 			if (row_dep[i]) {
 				continue;
 			}
@@ -345,9 +315,8 @@ public:
 			contribute();
 		}
 	}
-	void receiveData(DataMsg* msg)
+	void diagReceiveData(DataMsg* msg)
 	{
-		if (diag) {
 			for (int i=0; i<msg->size; i++) {
 				double val = msg->data[i];
 				int row = msg->rowInd[i];
@@ -375,10 +344,10 @@ public:
 				}	
 			}
 			msgPool.flushMsgPool();
+			delete msg;
 			diag_compute(allDone);
-		}
-		// nondiag
-		else if (xval_got) {
+	}
+	void nondiagReceiveData(DataMsg* msg){
 			for (int i=0; i<msg->size; i++) {
 				double val = msg->data[i];
 				int row = msg->rowInd[i];
@@ -393,12 +362,7 @@ public:
 				finished = true;
 				contribute();
 			}
-		} // xvalues not arrived yet
-		else {
-			memcpy(arrived_data+arrived_size, msg->data, (msg->size)*sizeof(double));
-			memcpy(arrived_rows+arrived_size, msg->rowInd, (msg->size)*sizeof(int));
-			arrived_size += msg->size;
-		}	
+		 
 		delete msg;
 	}
 };

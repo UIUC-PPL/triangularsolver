@@ -14,12 +14,6 @@ public:
 	int size;
 };
 
-class DepsMsg : public CMessage_DepsMsg
-{
-public:
-	row_attr* deps; // solution x
-};
-
 class xValMsg : public CMessage_xValMsg
 {
 public:

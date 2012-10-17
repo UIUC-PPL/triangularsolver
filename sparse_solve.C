@@ -5,18 +5,19 @@
 
 #include <stdio.h>
 #include <vector>
+#include "charm++.h"
 using namespace std;
+struct row_attr {
+	int chare; // no. of chare waiting
+	int row; // local row index in that chare
+	void pup(PUP::er &p) { p|chare; p|row;}
+};
 #include "sparse_solve.decl.h"
 
 #define MIN_ENTRIES_PER_X 20
 /*readonly*/ CProxy_Main mainProxy;
 /*readonly*/ int nElements;
 /*readonly*/ char fileName[250];
-
-struct row_attr {
-	int chare; // no. of chare waiting
-	int row; // local row index in that chare
-};
 
 #include "MessagePool.h"
 #include "ColumnsSolve.h"
@@ -100,9 +101,8 @@ public:
 
 		vector<chare_deps_str> chare_deps; // nexts for all block chares
 		row_attr* prev_in_row = new row_attr[m]; // previous chare in that row
-		for (int i=0; i<m; i++) {
+		for (int i=0; i<m; i++)
 			prev_in_row[i].chare = -1;
-		}
 		int offdiags = 0;
 		int diagdeps = 0;
 		double total_analysis_time =0;
@@ -112,9 +112,8 @@ public:
 			// first column
 			int startCol = i*num_loc_cols;
 			int endCol = (i+1)*num_loc_cols;
-			if (i==nElements-1) {
+			if (i==nElements-1)
 				endCol = total_columns;
-			}
 			// min entries: constant times number of x values
 			int min_entries = MIN_ENTRIES_PER_X*(endCol-startCol);
 			int indep_row_no=0;
@@ -216,14 +215,14 @@ public:
 					curr_row++;
 					tmp_curr_row++;
 					
-					if (curr_row==m) {
+					if (curr_row==m)
 						break;
-					}
+					
 				}
 				// empty lower diagonal
-				if (entries==0) {
+				if (entries==0)
 					break;
-				}
+				
 				offdiags += entries;
 				// CkPrintf("chare:%d nonzeros:%d\n",chareNo, entries);
 				tmpRow[tmp_curr_row] = entries;
@@ -242,9 +241,7 @@ public:
 			arr[i].get_section(nondiags, empty_nondiags);
 		}
 		for (int i=0; i<chare_deps.size(); i++) {
-			DepsMsg* msg = new (chare_deps[i].size) DepsMsg;
-			memcpy(msg->deps, chare_deps[i].nextRow, chare_deps[i].size*sizeof(row_attr));	
-			arr[chare_deps[i].chare_no].get_deps(msg);
+			arr[chare_deps[i].chare_no].get_deps(chare_deps[i].size, chare_deps[i].nextRow);
 		}
 		CkPrintf("analysis time:%f\n",total_analysis_time/nElements);
 		CkPrintf("offdiags:%d out of %d nonzeros, fraction:%f\n",offdiags, nzl, offdiags/(double)nzl);
