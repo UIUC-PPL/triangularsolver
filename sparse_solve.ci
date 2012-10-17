@@ -1,17 +1,12 @@
 mainmodule sparse_solve {
 	readonly CProxy_Main mainProxy;
-	readonly int nElements;
-	readonly char fileName[250];
 	
 	mainchare Main {
 		entry Main(CkArgMsg *m);
 		entry [reductiontarget] void initDone(void);
-		entry void reportIn(void);
+		entry [reductiontarget] void reportIn(void);
 	};
-	message DataMsg {
-		double data[];
-		int rowInd[];
-	};
+
 	message xValMsg {
 		double xVal[];
 	};
@@ -35,29 +30,29 @@ mainmodule sparse_solve {
 		entry void start() {
 			serial {
 				CkEntryOptions opts;
-				opts.setQueueing(CK_QUEUEING_FIFO);
+				opts.setQueueing(CK_QUEUEING_IFIFO);
 				opts.setPriority(10);
 				thisProxy[thisIndex].indep_compute();
 			}
 			overlap {				
 				if (diag) {
 					while (!finished) {
-						when receiveData(DataMsg* msg)
-							serial {diagReceiveData(msg);}
+						when receiveData(int m_size, double m_data[m_size], int m_rowInd[m_size])
+							serial {if(m_size>0) diagReceiveData(m_size, m_data, m_rowInd);}
 					}
 				}
-				if (!diag) {
+				else {
 					when get_xval(xValMsg* msg)
 						serial {xVal=msg->xVal; nondiag_compute();}
 					while (!finished) {
-						when receiveData(DataMsg* msg)
-							serial {nondiagReceiveData(msg);}
+						when receiveData(int m_size, double m_data[m_size], int m_rowInd[m_size])
+							serial {nondiagReceiveData(m_size, m_data, m_rowInd);}
 					}
 				}
 				when indep_compute()
 					serial {my_indep_compute();}
 			}
-//			serial contribute();
+			serial { contribute(CkCallback(CkReductionTarget(Main, reportIn), mainProxy)); }
 		};
 		entry void indep_compute();
 		entry void get_input(int num_entries, int num_rows, int num_cols, double data[num_entries], int colInd[num_entries], 
@@ -66,6 +61,6 @@ mainmodule sparse_solve {
 		entry void get_deps(int size, row_attr deps[size]);
 		entry void get_section(CProxySection_ColumnsSolve, bool);
 		entry void get_xval(xValMsg* msg);
-		entry void receiveData(DataMsg* msg);
+		entry void receiveData(int m_size, double m_data[m_size], int m_rowInd[m_size]);
 	};
 };

@@ -36,14 +36,10 @@ class ColumnsSolve : public CBase_ColumnsSolve
 	row_attr* nextRow; // for nondiags
 	int belowNumDone;
 	
-	bool xval_got; // x values arrived, for nondiagonal chares
 	bool finished;
 	bool empty_nondiags;
 	
-	// for nondiags, arrived messages before xVals
-	int *arrived_rows;
 	double *arrived_data;
-	int arrived_size;
 	bool *arrived_is; // for diag, is item arrived
 	
 	double* xVal; // value of x
@@ -51,10 +47,8 @@ class ColumnsSolve : public CBase_ColumnsSolve
 public:
 	ColumnsSolve():msgPool(thisProxy)
 	{
-		__sdag_init();
 		allDone=0;
 		belowNumDone=0;
-		xval_got = false;
 		finished = false;
 		empty_nondiags = false;
 		first_below_done = false;
@@ -91,14 +85,11 @@ public:
 			rest_below_rows = m_rest_below_rows;
 			rest_below_max_col = m_rest_below_max_col;
 			nextRow = new row_attr[first_below_rows+rest_below_rows];
-			arrived_rows = new int[first_below_rows+rest_below_rows];
 		} else {
 			nextRow = new row_attr[nMyRows];
-			arrived_rows = new int[nMyRows];
 		}
 		
 		arrived_data = new double[nMyRows];
-		arrived_size = 0;
 	}
 	void set_deps(int dep_size, row_attr deps[])
 	{
@@ -182,6 +173,9 @@ public:
 			}
 			allDone = indep_row_no;
 			diag_compute(allDone);
+			// send dummy message for sdag while to complete
+			if (finished)
+				thisProxy[thisIndex].receiveData(0,NULL,NULL);
 		}
 	}
 	void diag_compute(int start)
@@ -290,8 +284,8 @@ public:
 				lower_section.get_xval(msg);
 			}
 			if (belowNumDone==first_below_rows+rest_below_rows) {
-				finished = true;	
-				contribute();
+				finished = true;
+//				contribute(CkCallback(CkReductionTarget(Main, reportIn), mainProxy));
 			}
 		}
 	}
@@ -312,14 +306,14 @@ public:
 		msgPool.flushMsgPool();
 		if (allDone==nMyRows  && !finished) {
 			finished = true;
-			contribute();
+//			contribute(CkCallback(CkReductionTarget(Main, reportIn), mainProxy));
 		}
 	}
-	void diagReceiveData(DataMsg* msg)
+	void diagReceiveData(int m_size, double m_data[], int m_rowInd[])
 	{
-			for (int i=0; i<msg->size; i++) {
-				double val = msg->data[i];
-				int row = msg->rowInd[i];
+			for (int i=0; i<m_size; i++) {
+				double val = m_data[i];
+				int row = m_rowInd[i];
 				if (row==allDone && row<nMyCols) {
 					for (int j=rowInd[row]; j<rowInd[row+1]-1; j++) {
 						val += data[j]*xVal[colInd[j]];
@@ -332,9 +326,8 @@ public:
 				// if after diagonal 
 				else if (row>=nMyCols && ( (row<nMyCols+first_below_rows && allDone>first_below_max_col)
 										 || (row>=nMyCols+first_below_rows && allDone>rest_below_max_col))) {
-					for (int j=rowInd[row]; j<rowInd[row+1]; j++) {
+					for (int j=rowInd[row]; j<rowInd[row+1]; j++)
 						val += data[j]*xVal[colInd[j]];
-					}
 					msgPool.add(nextRow[row-nMyCols].chare, nextRow[row-nMyCols].row, val);
 					belowNumDone++;
 				} 
@@ -344,13 +337,12 @@ public:
 				}	
 			}
 			msgPool.flushMsgPool();
-			delete msg;
 			diag_compute(allDone);
 	}
-	void nondiagReceiveData(DataMsg* msg){
-			for (int i=0; i<msg->size; i++) {
-				double val = msg->data[i];
-				int row = msg->rowInd[i];
+	void nondiagReceiveData(int m_size, double m_data[], int m_rowInd[]){
+			for (int i=0; i<m_size; i++) {
+				double val = m_data[i];
+				int row = m_rowInd[i];
 				for (int j=rowInd[row]; j<rowInd[row+1]; j++) {
 					val += data[j]*xVal[colInd[j]];
 				}
@@ -360,9 +352,7 @@ public:
 			msgPool.flushMsgPool();
 			if (allDone==nMyRows  && !finished) {
 				finished = true;
-				contribute();
+		//		contribute(CkCallback(CkReductionTarget(Main, reportIn), mainProxy));
 			}
-		 
-		delete msg;
 	}
 };

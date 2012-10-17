@@ -6,14 +6,6 @@
 #define NO_MSG_SEGS 5
 #define MSG_SEG_SIZE 100000
 
-class DataMsg : public CMessage_DataMsg
-{
-public:
-    double* data; // data
-	int* rowInd;  // row number for each element
-	int size;
-};
-
 class xValMsg : public CMessage_xValMsg
 {
 public:
@@ -79,9 +71,8 @@ public:
 		out_data[out_ind] = val;
 		out_rowInd[out_ind] = row;
 		// check for full buffer
-		if (out_size[lastChare_ind]==MSG_SEG_SIZE) {
+		if (out_size[lastChare_ind]==MSG_SEG_SIZE)
 			flushMsgPool();
-		}
 	}
 	int allocMsgSeg()
 	{
@@ -100,14 +91,10 @@ public:
 	void flushMsgPool() 
 	{
 		for (int i=0; i<no_pe_segs; i++) {
-			// one integer for priority
-			DataMsg *msg = new ( out_size[i], out_size[i], 8*sizeof(int)) DataMsg;
-			msg->size = out_size[i];
-			memcpy(msg->data, &out_data[i*MSG_SEG_SIZE], out_size[i]*sizeof(double));
-			memcpy(msg->rowInd, &out_rowInd[i*MSG_SEG_SIZE],out_size[i]*sizeof(int));
-			*(int*)CkPriorityPtr(msg) = 0;
-			CkSetQueueing(msg, CK_QUEUEING_IFIFO);
-			thisProxy[index_out[i]].receiveData(msg);
+			CkEntryOptions opts;
+			opts.setQueueing(CK_QUEUEING_IFIFO);
+			opts.setPriority(0);
+			thisProxy[index_out[i]].receiveData(out_size[i], &out_data[i*MSG_SEG_SIZE], &out_rowInd[i*MSG_SEG_SIZE], &opts);
 		}
 		no_pe_segs=0;
 	}

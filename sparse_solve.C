@@ -16,8 +16,6 @@ struct row_attr {
 
 #define MIN_ENTRIES_PER_X 20
 /*readonly*/ CProxy_Main mainProxy;
-/*readonly*/ int nElements;
-/*readonly*/ char fileName[250];
 
 #include "MessagePool.h"
 #include "ColumnsSolve.h"
@@ -38,9 +36,11 @@ class Main : public CBase_Main
 	int total_chares; // all chares after creation
 	bool check;
 	double* xVal;
+	int nElements;
 public:
 	Main(CkArgMsg* m)
 	{
+		char fileName[250];
 		check=false;
 		//Process command-line arguments
 		if(m->argc < 3) {
@@ -74,8 +74,6 @@ public:
 		CkArrayOptions opts(nElements);
 		opts.setMap(myMap);
 		arr = CProxy_ColumnsSolve::ckNew(opts);
-		CkCallback *cb = new CkCallback(CkIndex_Main::reportIn(), mainProxy);
-		arr.ckSetReductionClient(cb);
 		setup_input(fileName);
 
 	};
@@ -396,16 +394,14 @@ public:
 				j++;
 			}
 			// if row was empty
-			if (j==rowInd[i]+lastRowInd[i]) {
+			if (j==rowInd[i]+lastRowInd[i])
 				continue;
-			}
 			if (lastRowInd[i]!=0) {
 				tmpDep[endCol-startCol+row_no] = true;
 				setDependentChare(chare_deps, prev_in_row[i], thisChare, endCol-startCol+row_no);
 			}
-			else {
+			else
 				tmpDep[endCol-startCol+row_no] = false;
-			}
 			lastRowInd[i] = j-rowInd[i];
 			row_attr rtr; rtr.chare= thisChare; rtr.row=row_no;
 			prev_in_row[i] = rtr;
@@ -415,12 +411,11 @@ public:
 	}
 	void setDependentChare(vector<chare_deps_str> &chare_deps, row_attr prev_row, int thisChare, int row_no)
 	{
-		for (int k=0; k<chare_deps.size(); k++) {
+		for (int k=0; k<chare_deps.size(); k++)
 			if (chare_deps[k].chare_no==prev_row.chare) {
 				row_attr tmprattr; tmprattr.chare=thisChare; tmprattr.row=row_no;
 				chare_deps[k].nextRow[prev_row.row] = tmprattr;
 			}
-		}
 	}
 	void readInput(char * fileName, double * & val, int * &rowind,int * & colptr, int & m, int&  n, int & nzl){
 		int i,j;
