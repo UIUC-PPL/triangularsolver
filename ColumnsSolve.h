@@ -110,9 +110,8 @@ public:
 			if (first_below_max_col < indep_row_no) {
 				for (; i<=first_below_max_col; i++) {
 					double val = 0;
-					for (int j=rowInd[i]; j<rowInd[i+1]-1; j++) {
+					for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 						val += data[j]*xVal[colInd[j]];
-					}
 					xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 				}
 				for (int i=nMyCols; i<nMyCols+first_below_rows; i++) {
@@ -121,14 +120,12 @@ public:
 						if (arrived_is[i]) {
 							val = arrived_data[i];
 							arrived_is[i] = false;
-						}else {
+						}else
 							continue;
-						}
 					}
 					
-					for (int j=rowInd[i]; j<rowInd[i+1]; j++) {
+					for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 						val += data[j]*xVal[colInd[j]];
-					}
 					msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 					belowNumDone++;
 				}
@@ -139,9 +136,8 @@ public:
 			if (rest_below_max_col < indep_row_no) {
 				for (; i<=rest_below_max_col; i++) {
 					double val = 0;
-					for (int j=rowInd[i]; j<rowInd[i+1]-1; j++) {
+					for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 						val += data[j]*xVal[colInd[j]];
-					}
 					xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 				}
 				for (int i=nMyCols+first_below_rows; i<nMyCols+first_below_rows+rest_below_rows; i++) {
@@ -150,14 +146,12 @@ public:
 						if (arrived_is[i]) {
 							val = arrived_data[i];
 							arrived_is[i] = false;
-						}else {
+						}else 
 							continue;
-						}
 					}
 					
-					for (int j=rowInd[i]; j<rowInd[i+1]; j++) {
+					for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 						val += data[j]*xVal[colInd[j]];
-					}
 					msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 					belowNumDone++;
 				}
@@ -166,9 +160,8 @@ public:
 			}
 			for (; i<indep_row_no; i++) {
 				double val = 0;
-				for (int j=rowInd[i]; j<rowInd[i+1]-1; j++) {
+				for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 					val += data[j]*xVal[colInd[j]];
-				}
 				xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 			}
 			allDone = indep_row_no;
@@ -181,22 +174,19 @@ public:
 	void diag_compute(int start)
 	{
 		// if hadn't started yet
-		if (allDone<indep_row_no) {
+		if (allDone<indep_row_no)
 			return;
-		}
 		int i=start;
 		for (; i<=first_below_max_col; i++) {
 			double val = 0;
 			if (row_dep[i-indep_row_no]) {
-				if (arrived_is[i]) {
+				if (arrived_is[i])
 					val = arrived_data[i];
-				} else {
+				else
 					break;
-				}
 			}
-			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++) {
+			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 				val += data[j]*xVal[colInd[j]];
-			}
 			xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 		}
 		if (i> first_below_max_col && !first_below_done) {
@@ -206,14 +196,12 @@ public:
 					if (arrived_is[i]) {
 						val = arrived_data[i];
 						arrived_is[i] = false;
-					}else {
+					}else
 						continue;
-					}
 				}
 				
-				for (int j=rowInd[i]; j<rowInd[i+1]; j++) {
+				for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 					val += data[j]*xVal[colInd[j]];
-				}
 				msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 				belowNumDone++;
 			}
@@ -223,15 +211,13 @@ public:
 		for (; i<=rest_below_max_col; i++) {
 			double val = 0;
 			if (row_dep[i-indep_row_no]) {
-				if (arrived_is[i]) {
+				if (arrived_is[i])
 					val = arrived_data[i];
-				} else {
+				else
 					break;
-				}
 			}
-			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++) {
+			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 				val += data[j]*xVal[colInd[j]];
-			}
 			xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 		}
 		if (i> rest_below_max_col && !rest_below_done) {
@@ -241,14 +227,12 @@ public:
 					if (arrived_is[i]) {
 						val = arrived_data[i];
 						arrived_is[i] = false;
-					}else {
+					}else
 						continue;
-					}
 				}
 				
-				for (int j=rowInd[i]; j<rowInd[i+1]; j++) {
+				for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 					val += data[j]*xVal[colInd[j]];
-				}
 				msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 				belowNumDone++;
 			}
@@ -259,15 +243,13 @@ public:
 		for (; i<nMyCols; i++) {
 			double val = 0;
 			if (row_dep[i-indep_row_no]) {
-				if (arrived_is[i]) {
+				if (arrived_is[i])
 					val = arrived_data[i];
-				} else {
+				else
 					break;
-				}
 			}
-			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++) {
+			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 				val += data[j]*xVal[colInd[j]];
-			}
 			xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 		}
 		allDone = i;
@@ -283,10 +265,8 @@ public:
 				CkSetQueueing(msg, CK_QUEUEING_IFIFO);
 				lower_section.get_xval(msg);
 			}
-			if (belowNumDone==first_below_rows+rest_below_rows) {
+			if (belowNumDone==first_below_rows+rest_below_rows)
 				finished = true;
-//				contribute(CkCallback(CkReductionTarget(Main, reportIn), mainProxy));
-			}
 		}
 	}
 	void nondiag_compute()
@@ -296,18 +276,15 @@ public:
 				continue;
 			}
 			double val=0;
-			for (int j=rowInd[i]; j<rowInd[i+1]; j++) {
+			for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 				val += data[j]*xVal[colInd[j]];
-			}
 			msgPool.add(nextRow[i].chare, nextRow[i].row, val);
 			allDone++;
 			
 		}
 		msgPool.flushMsgPool();
-		if (allDone==nMyRows  && !finished) {
+		if (allDone==nMyRows)
 			finished = true;
-//			contribute(CkCallback(CkReductionTarget(Main, reportIn), mainProxy));
-		}
 	}
 	void diagReceiveData(int m_size, double m_data[], int m_rowInd[])
 	{
@@ -315,9 +292,8 @@ public:
 				double val = m_data[i];
 				int row = m_rowInd[i];
 				if (row==allDone && row<nMyCols) {
-					for (int j=rowInd[row]; j<rowInd[row+1]-1; j++) {
+					for (int j=rowInd[row]; j<rowInd[row+1]-1; j++)
 						val += data[j]*xVal[colInd[j]];
-					}
 					xVal[row] = (rhs[row]-val)*(data[rowInd[row+1]-1]);
 					// first depending row is done
 					allDone++;
@@ -343,16 +319,13 @@ public:
 			for (int i=0; i<m_size; i++) {
 				double val = m_data[i];
 				int row = m_rowInd[i];
-				for (int j=rowInd[row]; j<rowInd[row+1]; j++) {
+				for (int j=rowInd[row]; j<rowInd[row+1]; j++)
 					val += data[j]*xVal[colInd[j]];
-				}
 				msgPool.add(nextRow[row].chare, nextRow[row].row, val);
 				allDone++;
 			}
 			msgPool.flushMsgPool();
-			if (allDone==nMyRows  && !finished) {
+			if (allDone==nMyRows)
 				finished = true;
-		//		contribute(CkCallback(CkReductionTarget(Main, reportIn), mainProxy));
-			}
 	}
 };

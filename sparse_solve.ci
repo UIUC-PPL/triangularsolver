@@ -16,14 +16,14 @@ mainmodule sparse_solve {
 			when get_input(int num_entries, int num_rows, int num_cols, double data[num_entries], int colInd[num_entries], 
 			int rowInd[num_rows+1],	bool dep[num_rows],	bool diag,	int indep_row_no,	int first_below_rows, int first_below_max_col,
 			int rest_below_rows, int rest_below_max_col)
-				atomic {set_input(num_entries, num_rows, num_cols, data, colInd, rowInd, dep, diag, indep_row_no, 
+				serial {set_input(num_entries, num_rows, num_cols, data, colInd, rowInd, dep, diag, indep_row_no, 
 				first_below_rows, first_below_max_col, rest_below_rows, rest_below_max_col);}
 			when get_deps(int size, row_attr deps[size])
-				atomic {set_deps(size, deps);}
+				serial {set_deps(size, deps);}
 			if(diag)
 				when get_section(CProxySection_ColumnsSolve nondiags, bool empty_sec)
 					serial {set_section(nondiags, empty_sec);}
-			atomic {
+			serial {
 				contribute(CkCallback(CkReductionTarget(Main, initDone), mainProxy));
 			}
 		};

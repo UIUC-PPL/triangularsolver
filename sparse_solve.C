@@ -122,9 +122,8 @@ public:
 
 			// last row of next diagonal chare
 			int nextChareLastRow = endCol + (endCol-startCol);
-			if (i>=nElements-2) {
+			if (i>=nElements-2)
 				nextChareLastRow = total_columns;
-			}
 			int curr_row = endCol;
 			// get size of below diagonal corresponding to next diagonal Chare
 			int belowSize = getBelowSize(rowInd, colsInd, endCol, endCol, nextChareLastRow, lastRowInd);
@@ -150,9 +149,8 @@ public:
 					offdiags += belowSize;
 					curr_row = total_columns;
 				}
-				if (belowSize==0) {
+				if (belowSize==0)
 					curr_row = total_columns;
-				}
 			}
 			
 			chare_deps_str new_chare; new_chare.size=firstBelowChunkRows+restBelowChunkRows; new_chare.chare_no=i;
@@ -188,9 +186,8 @@ public:
 					// if empty go to next row
 					if (entries == tmpRow[tmp_curr_row]) {
 						curr_row++;
-						if (curr_row==m) {
+						if (curr_row==m)
 							break;
-						}
 						continue;
 					}
 					lastRowInd[curr_row] = j-rowInd[curr_row];
@@ -300,10 +297,9 @@ public:
 		int target_row = 0;
 		tmpRow[0]=0;
 		for (int i=endCol-1; i>=startCol; i--) {
-			if (!mark_dep[i-startCol] && !mark_done[i-startCol]) {
+			if (!mark_dep[i-startCol] && !mark_done[i-startCol])
 				place(i, target_row, target_nzls, map_rows, startCol, rowInd,
 					  colInd, data, tmpData, tmpRow, tmpCol, mark_done, lastRowInd);
-			}
 		}
 		// number of independent rows
 		no_indeps = target_row;
@@ -341,12 +337,11 @@ public:
 		// place dependencies
 		int j=rowInd[row+1]-2;
 		for (; j>=rowInd[row]+lastRowInd[row]; j--) {
-			if (colInd[j]<startCol || colInd[j]==row) {
+			if (colInd[j]<startCol || colInd[j]==row)
 				continue;
-			}
-			assert(rowInd[row+1]-2>=rowInd[row]);
-			assert(lastRowInd[row]>=0);
-			assert(colInd[j]<row && colInd[j]>=startCol);
+			//assert(rowInd[row+1]-2>=rowInd[row]);
+			//assert(lastRowInd[row]>=0);
+			//assert(colInd[j]<row && colInd[j]>=startCol);
 			if (!mark_done[colInd[j]-startCol]) {
 				place(colInd[j], target_row, target_nzls, map_rows, startCol, rowInd,
 					  colInd, data, tmpData, tmpRow, tmpCol, mark_done, lastRowInd);
@@ -387,9 +382,8 @@ public:
 			while (colInd[j]<endCol) {
 				tmpData[entries] = data[j];
 				tmpCol[entries] = map_rows[colInd[j]-startCol];
-				if (tmpCol[entries]>max_col) {
+				if (tmpCol[entries]>max_col)
 					max_col = tmpCol[entries];
-				}
 				entries++;
 				j++;
 			}
@@ -430,13 +424,11 @@ public:
 		rowind = new int[m+1];
 		colptr = new int[nzl];
 		/* second line */
-		for(i=0;i<m+1;i++){
+		for(i=0;i<m+1;i++)
 			fscanf(fp,"%d",&rowind[i]);
-		}
 		/*third line */
-		for(i=0;i<nzl;i++){
+		for(i=0;i<nzl;i++)
 			fscanf(fp,"%d",&colptr[i]);
-		}
 		/* fourth line */
 		for(i=0;i<nzl;i++){
 			fscanf(fp,"%lf",&val[i]);
