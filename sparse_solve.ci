@@ -1,33 +1,34 @@
 mainmodule sparse_solve {
 	readonly CProxy_Main mainProxy;
+    readonly CProxy_ArrayMeshStreamer<RowSum, int> aggregator;
 	
 	mainchare Main {
 		entry Main(CkArgMsg *m);
 		entry [reductiontarget] void initDone(void);
 		entry [reductiontarget] void reportIn(void);
 	};
-
+	
 	message xValMsg {
 		double xVal[];
 	};
-	array [1D] ColumnsSolve {
+	array [1D] ColumnsSolve: MeshStreamerArrayClient<RowSum> {
 		entry ColumnsSolve();
 		entry void init() {
 			when get_input(int num_entries, int num_rows, int num_cols, double data[num_entries], int colInd[num_entries], 
-			int rowInd[num_rows+1],	bool dep[num_rows],	bool diag,	int indep_row_no,	int first_below_rows, int first_below_max_col,
-			int rest_below_rows, int rest_below_max_col)
-				serial {set_input(num_entries, num_rows, num_cols, data, colInd, rowInd, dep, diag, indep_row_no, 
-				first_below_rows, first_below_max_col, rest_below_rows, rest_below_max_col);}
+						   int rowInd[num_rows+1],	bool dep[num_rows],	bool diag,	int indep_row_no,	int first_below_rows, int first_below_max_col,
+						   int rest_below_rows, int rest_below_max_col)
+			serial {set_input(num_entries, num_rows, num_cols, data, colInd, rowInd, dep, diag, indep_row_no, 
+							  first_below_rows, first_below_max_col, rest_below_rows, rest_below_max_col);}
 			when get_deps(int size, row_attr deps[size])
-				serial {set_deps(size, deps);}
+			serial {set_deps(size, deps);}
 			if(diag)
-				when get_section(CProxySection_ColumnsSolve nondiags, bool empty_sec)
-					serial {set_section(nondiags, empty_sec);}
+			when get_section(CProxySection_ColumnsSolve nondiags, bool empty_sec)
+			serial {set_section(nondiags, empty_sec);}
 			serial {
 				contribute(CkCallback(CkReductionTarget(Main, initDone), mainProxy));
 			}
 		};
-		entry void start() {
+		entry [threaded] void start() {
 			serial {
 				CkEntryOptions opts;
 				opts.setQueueing(CK_QUEUEING_IFIFO);
@@ -38,29 +39,34 @@ mainmodule sparse_solve {
 				if (diag) {
 					while (!finished) {
 						when receiveData(int m_size, double m_data[m_size], int m_rowInd[m_size])
-							serial {if(m_size>0) diagReceiveData(m_size, m_data, m_rowInd);}
+						serial {if(m_size>0) diagReceiveData(m_size, m_data, m_rowInd);}
 					}
 				}
 				else {
 					when get_xval(xValMsg* msg)
-						serial {xVal=msg->xVal; nondiag_compute();}
+					serial {xVal=msg->xVal; nondiag_compute();}
 					while (!finished) {
 						when receiveData(int m_size, double m_data[m_size], int m_rowInd[m_size])
-							serial {nondiagReceiveData(m_size, m_data, m_rowInd);}
+						serial {nondiagReceiveData(m_size, m_data, m_rowInd);}
 					}
 				}
 				when indep_compute()
-					serial {my_indep_compute();}
+				serial {my_indep_compute();}
 			}
-			serial { contribute(CkCallback(CkReductionTarget(Main, reportIn), mainProxy)); }
+			serial { streamer->done(); contribute(CkCallback(CkReductionTarget(Main, reportIn), mainProxy)); }
 		};
 		entry void indep_compute();
 		entry void get_input(int num_entries, int num_rows, int num_cols, double data[num_entries], int colInd[num_entries], 
-			int rowInd[num_rows+1],	bool dep[num_rows],	bool diag,	int indep_row_no,	int first_below_rows, int first_below_max_col,
-			int rest_below_rows, int rest_below_max_col);
+							 int rowInd[num_rows+1],	bool dep[num_rows],	bool diag,	int indep_row_no,	int first_below_rows, int first_below_max_col,
+							 int rest_below_rows, int rest_below_max_col);
 		entry void get_deps(int size, row_attr deps[size]);
 		entry void get_section(CProxySection_ColumnsSolve, bool);
 		entry void get_xval(xValMsg* msg);
 		entry void receiveData(int m_size, double m_data[m_size], int m_rowInd[m_size]);
 	};
+	// for message aggregation streamer
+	message MeshStreamerMessage<ArrayDataItem<RowSum, int> >;
+	array [1D] MeshStreamerArrayClient<RowSum>;
+	group ArrayMeshStreamer<RowSum, int>;    
+	group MeshStreamer<ArrayDataItem<RowSum, int> >;
 };

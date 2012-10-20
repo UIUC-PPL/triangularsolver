@@ -44,9 +44,11 @@ class ColumnsSolve : public CBase_ColumnsSolve
 	
 	double* xVal; // value of x
 	double* rhs; // right-hand side for each column if diagonal chare
+	ArrayMeshStreamer<RowSum, int> * streamer; 
 public:
 	ColumnsSolve():msgPool(thisProxy)
 	{
+		streamer = ((ArrayMeshStreamer<RowSum, int> *)CkLocalBranch(aggregator));
 		allDone=0;
 		belowNumDone=0;
 		finished = false;
@@ -126,11 +128,12 @@ public:
 					
 					for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 						val += data[j]*xVal[colInd[j]];
-					msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
+					//msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
+					streamer->insertData(RowSum(nextRow[i-nMyCols].row, val), nextRow[i-nMyCols].chare);
 					belowNumDone++;
 				}
 				first_below_done = true;
-				msgPool.flushMsgPool();
+				//msgPool.flushMsgPool();
 			}
 			// get other chares data
 			if (rest_below_max_col < indep_row_no) {
@@ -152,11 +155,12 @@ public:
 					
 					for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 						val += data[j]*xVal[colInd[j]];
-					msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
+					//msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
+					streamer->insertData(RowSum(nextRow[i-nMyCols].row, val), nextRow[i-nMyCols].chare);
 					belowNumDone++;
 				}
 				rest_below_done = true;
-				msgPool.flushMsgPool();
+				//msgPool.flushMsgPool();
 			}
 			for (; i<indep_row_no; i++) {
 				double val = 0;
@@ -202,11 +206,12 @@ public:
 				
 				for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 					val += data[j]*xVal[colInd[j]];
-				msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
+				// msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
+				streamer->insertData(RowSum(nextRow[i-nMyCols].row, val), nextRow[i-nMyCols].chare);
 				belowNumDone++;
 			}
 			first_below_done = true;
-			msgPool.flushMsgPool();
+			// msgPool.flushMsgPool();
 		}
 		for (; i<=rest_below_max_col; i++) {
 			double val = 0;
@@ -233,11 +238,12 @@ public:
 				
 				for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 					val += data[j]*xVal[colInd[j]];
-				msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
+				// msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
+				streamer->insertData(RowSum(nextRow[i-nMyCols].row, val), nextRow[i-nMyCols].chare);
 				belowNumDone++;
 			}
 			rest_below_done = true;
-			msgPool.flushMsgPool();
+			// msgPool.flushMsgPool();
 		}
 		
 		for (; i<nMyCols; i++) {
@@ -278,11 +284,11 @@ public:
 			double val=0;
 			for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 				val += data[j]*xVal[colInd[j]];
-			msgPool.add(nextRow[i].chare, nextRow[i].row, val);
-			allDone++;
-			
+			//msgPool.add(nextRow[i].chare, nextRow[i].row, val);
+			streamer->insertData(RowSum(nextRow[i].row, val), nextRow[i].chare);
+			allDone++;			
 		}
-		msgPool.flushMsgPool();
+		// msgPool.flushMsgPool();
 		if (allDone==nMyRows)
 			finished = true;
 	}
@@ -304,7 +310,8 @@ public:
 										 || (row>=nMyCols+first_below_rows && allDone>rest_below_max_col))) {
 					for (int j=rowInd[row]; j<rowInd[row+1]; j++)
 						val += data[j]*xVal[colInd[j]];
-					msgPool.add(nextRow[row-nMyCols].chare, nextRow[row-nMyCols].row, val);
+					//msgPool.add(nextRow[row-nMyCols].chare, nextRow[row-nMyCols].row, val);
+					streamer->insertData(RowSum(nextRow[row-nMyCols].row, val), nextRow[row-nMyCols].chare);
 					belowNumDone++;
 				} 
 				else {
@@ -312,7 +319,7 @@ public:
 					arrived_is[row] = true;
 				}	
 			}
-			msgPool.flushMsgPool();
+			// msgPool.flushMsgPool();
 			diag_compute(allDone);
 	}
 	void nondiagReceiveData(int m_size, double m_data[], int m_rowInd[]){
@@ -321,10 +328,11 @@ public:
 				int row = m_rowInd[i];
 				for (int j=rowInd[row]; j<rowInd[row+1]; j++)
 					val += data[j]*xVal[colInd[j]];
-				msgPool.add(nextRow[row].chare, nextRow[row].row, val);
+				//msgPool.add(nextRow[row].chare, nextRow[row].row, val);
+				streamer->insertData(RowSum(nextRow[row].row, val), nextRow[row].chare);
 				allDone++;
 			}
-			msgPool.flushMsgPool();
+			// msgPool.flushMsgPool();
 			if (allDone==nMyRows)
 				finished = true;
 	}

@@ -12,10 +12,15 @@ struct row_attr {
 	int row; // local row index in that chare
 	void pup(PUP::er &p) { p|chare; p|row;}
 };
+
+struct RowSum { int row; double data; RowSum(int r, double d):row(r),data(d){} };
+#include "NDMeshStreamer.h"
 #include "sparse_solve.decl.h"
 
 #define MIN_ENTRIES_PER_X 20
+#define NUM_MESSAGES_BUFFERED 256
 /*readonly*/ CProxy_Main mainProxy;
+CProxy_ArrayMeshStreamer<RowSum, int> aggregator;
 
 #include "MessagePool.h"
 #include "ColumnsSolve.h"
@@ -50,7 +55,6 @@ public:
 		nElements=atoi(m->argv[1]);
 		strcpy(fileName, m->argv[2]);
 		
-		delete m;
 		CkPrintf("reading file: %s\n",fileName);	
 		FILE * fp= fopen(fileName, "r");
 		if(fp==NULL)
@@ -58,10 +62,8 @@ public:
 			CkPrintf("file read error!\n");
 			CkExit();
 		}
-		int ncols, nzl;
-		fscanf(fp,"%d",&ncols);
-		fscanf(fp,"%d",&ncols);
-		fscanf(fp,"%d",&nzl);		
+		int ncols, tmp, nzl;
+		fscanf(fp,"%d %d %d",&ncols,&tmp,&nzl);
 		fclose(fp);
 
 		total_columns = ncols;
@@ -74,6 +76,7 @@ public:
 		CkArrayOptions opts(nElements);
 		opts.setMap(myMap);
 		arr = CProxy_ColumnsSolve::ckNew(opts);
+		aggregator = CProxy_ArrayMeshStreamer<RowSum,int>::ckNew(NUM_MESSAGES_BUFFERED,1, &nElements, arr, 1, -1);
 		setup_input(fileName);
 
 	};
@@ -262,9 +265,10 @@ public:
 	}
 	void initDone(void)
 	{
+		CkCallback startCb(CkIndex_ColumnsSolve::start(), arr);
+		aggregator.init(arr.ckGetArrayID(), startCb, NULL, 0, false);
 		start_time = CmiWallTimer();
-		arr.start();
-	};
+	}
 
 	void reorder(int *map_rows, int& no_indeps, int startCol, int endCol, row_attr* prev_in_row, int* rowInd,
 				int* colInd, double* data,double* tmpData,int* tmpRow,int* tmpCol,
