@@ -274,7 +274,8 @@ public:
 	void initDone(void)
 	{
 		CkCallback startCb(CkIndex_ColumnsSolve::start(), arr);
-		aggregator.init(arr.ckGetArrayID(), startCb, NULL, 0, false);
+		CkCallback endCb(CkIndex_Main::reportIn(), mainProxy);
+		aggregator.init(arr.ckGetArrayID(), startCb, endCb, 1, false);
 		start_time = CmiWallTimer();
 	}
 

@@ -28,42 +28,21 @@ mainmodule sparse_solve {
 				contribute(CkCallback(CkReductionTarget(Main, initDone), mainProxy));
 			}
 		};
-		entry [threaded] void start() {
+		entry void start() {
 			serial {
 				CkEntryOptions opts;
 				opts.setQueueing(CK_QUEUEING_IFIFO);
 				opts.setPriority(10);
-				thisProxy(thisIndex.data[0]).indep_compute();
+				thisProxy(thisIndex.data[0]).indep_compute(0, &opts);
 			}
-			overlap {				
-				if (diag) {
-					while (!finished) {
-						when receiveAtDestination(MeshStreamerMessage<RowSum> *msg)
-						serial {if(true) diagReceiveData();}
-					}
-				}
-				else {
-					when get_xval(xValMsg* msg)
-					serial {xVal=msg->xVal; nondiag_compute();}
-					while (!finished) {
-						when receiveAtDestination(MeshStreamerMessage<RowSum> *msg)
-						serial {nondiagReceiveData();}
-					}
-				}
-				when indep_compute()
-				serial {my_indep_compute();}
-			}
-			serial { streamer->done(); contribute(CkCallback(CkReductionTarget(Main, reportIn), mainProxy)); }
 		};
-		entry void process(RowSum &rs);
-		entry void receiveAtDestination(MeshStreamerMessage<RowSum> *msg);
-		entry void indep_compute();
+		entry [threaded] void indep_compute(int a);
 		entry void get_input(int num_entries, int num_rows, int num_cols, double data[num_entries], int colInd[num_entries], 
 							 int rowInd[num_rows+1],	bool dep[num_rows],	bool diag,	int indep_row_no,	int first_below_rows, int first_below_max_col,
 							 int rest_below_rows, int rest_below_max_col);
 		entry void get_deps(int size, row_attr deps[size]);
 		entry void get_section(CProxySection_ColumnsSolve, bool);
-		entry void get_xval(xValMsg* msg);
+		entry [threaded] void get_xval(xValMsg* msg);
 	};
 	// for message aggregation streamer
 	message MeshStreamerMessage<ArrayDataItem<RowSum, int> >;
