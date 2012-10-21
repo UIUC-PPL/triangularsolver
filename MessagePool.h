@@ -6,11 +6,6 @@
 #define NO_MSG_SEGS 5
 #define MSG_SEG_SIZE 100000
 
-class xValMsg : public CMessage_xValMsg
-{
-public:
-	double *xVal; // solution x
-};
 
 class MessagePool {
 	CProxy_ColumnsSolve thisProxy;

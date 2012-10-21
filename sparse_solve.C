@@ -13,7 +13,9 @@ struct row_attr {
 	void pup(PUP::er &p) { p|chare; p|row;}
 };
 
-struct RowSum { int row; double data; RowSum(int r, double d):row(r),data(d){} };
+struct RowSum { int row; double val; RowSum(int r, double d):row(r),val(d){} RowSum(){} 
+void pup(PUP::er &p) { p|row; p|val;}
+};
 #include "NDMeshStreamer.h"
 #include "sparse_solve.decl.h"
 
@@ -22,7 +24,12 @@ struct RowSum { int row; double data; RowSum(int r, double d):row(r),data(d){} }
 /*readonly*/ CProxy_Main mainProxy;
 CProxy_ArrayMeshStreamer<RowSum, int> aggregator;
 
-#include "MessagePool.h"
+class xValMsg : public CMessage_xValMsg
+{
+public:
+	double *xVal; // solution x
+};
+
 #include "ColumnsSolve.h"
 
 // for each block chare keeps deps
@@ -76,7 +83,8 @@ public:
 		CkArrayOptions opts(nElements);
 		opts.setMap(myMap);
 		arr = CProxy_ColumnsSolve::ckNew(opts);
-		aggregator = CProxy_ArrayMeshStreamer<RowSum,int>::ckNew(NUM_MESSAGES_BUFFERED,1, &nElements, arr, 1, -1);
+		int dimSize = CkNumPes();
+		aggregator = CProxy_ArrayMeshStreamer<RowSum,int>::ckNew(NUM_MESSAGES_BUFFERED,1, &dimSize, arr, 1, -1);
 		setup_input(fileName);
 
 	};

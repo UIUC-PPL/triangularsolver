@@ -6,7 +6,7 @@ OBJS = sparse_solve.o
 all: sparse_solve
 
 sparse_solve: $(OBJS)
-	$(CHARMC) -language charm++ -o sparse_solve $(OBJS)  #-tracemode projections 
+	$(CHARMC) -language charm++ -module NDMeshStreamer -module completion -o sparse_solve $(OBJS)  #-tracemode projections 
 
 sparse_solve.decl.h: sparse_solve.ci
 	$(CHARMC)  sparse_solve.ci

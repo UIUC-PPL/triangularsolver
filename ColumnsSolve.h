@@ -13,7 +13,6 @@ class ColumnsSolve : public CBase_ColumnsSolve
 {
 	ColumnsSolve_SDAG_CODE;
 	
-	MessagePool msgPool;
 	
 	int* rowInd;  // index of each row, one more for convenience
 	double* data; // data in rows sparse compressed
@@ -46,9 +45,8 @@ class ColumnsSolve : public CBase_ColumnsSolve
 	double* rhs; // right-hand side for each column if diagonal chare
 	ArrayMeshStreamer<RowSum, int> * streamer; 
 public:
-	ColumnsSolve():msgPool(thisProxy)
+	ColumnsSolve()
 	{
-		streamer = ((ArrayMeshStreamer<RowSum, int> *)CkLocalBranch(aggregator));
 		allDone=0;
 		belowNumDone=0;
 		finished = false;
@@ -56,12 +54,13 @@ public:
 		first_below_done = false;
 		rest_below_done = false;
 	}
-	ColumnsSolve(CkMigrateMessage *m):msgPool(thisProxy) {}
+	ColumnsSolve(CkMigrateMessage *m) {}
 	
 	void set_input(int num_entries, int num_rows, int num_cols, double m_data[], int m_colInd[], 
 				   int m_rowInd[],	bool dep[],	bool m_diag, int m_indep_row_no, int m_first_below_rows,
 				   int m_first_below_max_col, int m_rest_below_rows, int m_rest_below_max_col)
 	{
+		streamer = ((ArrayMeshStreamer<RowSum, int> *)CkLocalBranch(aggregator));
 		data = new double[num_entries];
 		colInd = new int[num_entries];
 		rowInd = new int[num_rows+1];
@@ -171,8 +170,8 @@ public:
 			allDone = indep_row_no;
 			diag_compute(allDone);
 			// send dummy message for sdag while to complete
-			if (finished)
-				thisProxy[thisIndex].receiveData(0,NULL,NULL);
+			//if (finished)
+			thisProxy(thisIndex.data[0]).process(RowSum(-1,0));
 		}
 	}
 	void diag_compute(int start)
@@ -292,11 +291,10 @@ public:
 		if (allDone==nMyRows)
 			finished = true;
 	}
-	void diagReceiveData(int m_size, double m_data[], int m_rowInd[])
+	void diagReceiveData()
 	{
-			for (int i=0; i<m_size; i++) {
-				double val = m_data[i];
-				int row = m_rowInd[i];
+		double val = 0;
+		int row = 0;
 				if (row==allDone && row<nMyCols) {
 					for (int j=rowInd[row]; j<rowInd[row+1]-1; j++)
 						val += data[j]*xVal[colInd[j]];
@@ -313,27 +311,21 @@ public:
 					//msgPool.add(nextRow[row-nMyCols].chare, nextRow[row-nMyCols].row, val);
 					streamer->insertData(RowSum(nextRow[row-nMyCols].row, val), nextRow[row-nMyCols].chare);
 					belowNumDone++;
-				} 
+				}
 				else {
 					arrived_data[row] = val;
 					arrived_is[row] = true;
-				}	
-			}
-			// msgPool.flushMsgPool();
-			diag_compute(allDone);
+				}
+//			diag_compute(allDone);
 	}
-	void nondiagReceiveData(int m_size, double m_data[], int m_rowInd[]){
-			for (int i=0; i<m_size; i++) {
-				double val = m_data[i];
-				int row = m_rowInd[i];
-				for (int j=rowInd[row]; j<rowInd[row+1]; j++)
-					val += data[j]*xVal[colInd[j]];
-				//msgPool.add(nextRow[row].chare, nextRow[row].row, val);
-				streamer->insertData(RowSum(nextRow[row].row, val), nextRow[row].chare);
-				allDone++;
-			}
-			// msgPool.flushMsgPool();
-			if (allDone==nMyRows)
-				finished = true;
+	void nondiagReceiveData(){
+		double val = 0;
+		int row = 0;
+		for (int j=rowInd[row]; j<rowInd[row+1]; j++)
+			val += data[j]*xVal[colInd[j]];
+		streamer->insertData(RowSum(nextRow[row].row, val), nextRow[row].chare);
+		allDone++;
+		if (allDone==nMyRows)
+			finished = true;
 	}
 };
