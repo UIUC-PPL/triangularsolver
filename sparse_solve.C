@@ -18,13 +18,14 @@ void pup(PUP::er &p) { p|row; p|val;}
 };
 #include "NDMeshStreamer.h"
 #include "sparse_solve.decl.h"
+#include "ckmulticast.h"
 
 #define MIN_ENTRIES_PER_X 20
 #define NUM_MESSAGES_BUFFERED 256
 /*readonly*/ CProxy_Main mainProxy;
 CProxy_ArrayMeshStreamer<RowSum, int> aggregator;
 
-class xValMsg : public CMessage_xValMsg
+class xValMsg : public CkMcastBaseMsg, public CMessage_xValMsg
 {
 public:
 	double *xVal; // solution x
@@ -115,7 +116,8 @@ public:
 		int offdiags = 0;
 		int diagdeps = 0;
 		double total_analysis_time =0;
-
+		CkGroupID mCastGrpId = CProxy_CkMulticastMgr::ckNew();
+		
 		for (int i=0; i<nElements; i++) {
 			int lastNoDiagChare = chareNo;
 			// first column
@@ -244,7 +246,7 @@ public:
 			bool empty_nondiags = false;
 			if(lastNoDiagChare== chareNo)
 				empty_nondiags = true;
-			arr[i].get_section(nondiags, empty_nondiags);
+			arr[i].get_section(nondiags, empty_nondiags, mCastGrpId);
 		}
 		for (int i=0; i<chare_deps.size(); i++) {
 			arr[chare_deps[i].chare_no].get_deps(chare_deps[i].size, chare_deps[i].nextRow);

@@ -22,8 +22,8 @@ mainmodule sparse_solve {
 			when get_deps(int size, row_attr deps[size])
 			serial {set_deps(size, deps);}
 			if(diag)
-			when get_section(CProxySection_ColumnsSolve nondiags, bool empty_sec)
-			serial {set_section(nondiags, empty_sec);}
+			when get_section(CProxySection_ColumnsSolve nondiags, bool empty_sec, CkGroupID mCastGrpId)
+			serial {set_section(nondiags, empty_sec, mCastGrpId);}
 			serial {
 				contribute(CkCallback(CkReductionTarget(Main, initDone), mainProxy));
 			}
@@ -41,8 +41,8 @@ mainmodule sparse_solve {
 							 int rowInd[num_rows+1],	bool dep[num_rows],	bool diag,	int indep_row_no,	int first_below_rows, int first_below_max_col,
 							 int rest_below_rows, int rest_below_max_col);
 		entry void get_deps(int size, row_attr deps[size]);
-		entry void get_section(CProxySection_ColumnsSolve, bool);
-		entry [threaded] void get_xval(xValMsg* msg);
+		entry void get_section(CProxySection_ColumnsSolve, bool, CkGroupID mCastGrpId);
+		entry [threaded, nokeep] void get_xval(xValMsg* msg);
 	};
 	// for message aggregation streamer
 	message MeshStreamerMessage<ArrayDataItem<RowSum, int> >;

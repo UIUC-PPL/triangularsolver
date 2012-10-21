@@ -104,10 +104,12 @@ public:
 		memcpy(nextRow, deps, (dep_size)*sizeof(row_attr));
 	}
 
-	void set_section(CProxySection_ColumnsSolve nondiags, bool empty_sec)
+	void set_section(CProxySection_ColumnsSolve nondiags, bool empty_sec, CkGroupID mCastGrpId)
 	{
 		lower_section = nondiags;
 		empty_nondiags = empty_sec;
+		if (!empty_nondiags)
+			lower_section.ckSectionDelegate(CProxy_CkMulticastMgr(mCastGrpId).ckLocalBranch());
 	}
 	
 	void indep_compute(int a)
@@ -199,7 +201,7 @@ public:
 					if (arrived_is[i]) {
 						val = arrived_data[i];
 						arrived_is[i] = false;
-					}else
+					} else
 						continue;
 				}
 				
@@ -272,6 +274,7 @@ public:
 	}
 	void get_xval(xValMsg* msg)
 	{
+		CmiReference(UsrToEnv(msg));
 		xVal = msg->xVal;
 		xval_got = true;
 		// start computation
