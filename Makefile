@@ -14,7 +14,7 @@ sparse_solve.decl.h: sparse_solve.ci
 clean:
 	rm -f *.log *.sts *.projrc *.decl.h *.def.h conv-host *.o sparse_solve charmrun
 
-sparse_solve.o: sparse_solve.C ColumnsSolve.h sparse_solve.decl.h MessagePool.h
+sparse_solve.o: sparse_solve.C ColumnsSolve.h sparse_solve.decl.h
 	$(CHARMC) -c sparse_solve.C
 
 test: all

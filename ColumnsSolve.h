@@ -13,31 +13,22 @@ class ColumnsSolve : public CBase_ColumnsSolve
 {
 	ColumnsSolve_SDAG_CODE;
 	
-	
 	int* rowInd;  // index of each row, one more for convenience
 	double* data; // data in rows sparse compressed
 	int *colInd; // column index of each element
 	
-	int nMyCols;  // number of columns of this chare
-	int nMyRows; // number of rows
+	int nMyCols, nMyRows;  // number of columns and rows of this chare
 	bool diag; // is diagonal Chare
-	int indep_row_no; // for diag
-	int first_below_rows;
-	int first_below_max_col;
-	int rest_below_rows;
-	int rest_below_max_col;
-	bool first_below_done;
-	bool rest_below_done;
+	int indep_row_no, first_below_rows, first_below_max_col, rest_below_rows, rest_below_max_col;
+	bool first_below_done, rest_below_done;
 	
-	int allDone; // done rows
+	int allDone, belowNumDone; // done rows
 	bool* row_dep; // is each row dependent
 	CProxySection_ColumnsSolve lower_section; // lower diag chares, for diags
 	row_attr* nextRow; // for nondiags
-	int belowNumDone;
 	
-	bool finished;
-	bool empty_nondiags;
-	bool xval_got; // x values arrived, for nondiagonal chares
+	bool finished, empty_nondiags, xval_got;
+	xValMsg* xval_msg;
 	
 	int *arrived_rows;
 	double *arrived_data;
@@ -92,6 +83,14 @@ public:
 			rest_below_max_col = m_rest_below_max_col;
 			nextRow = new row_attr[first_below_rows+rest_below_rows];
 			arrived_rows = new int[first_below_rows+rest_below_rows];
+			if (!empty_nondiags) {
+				xval_msg = new (nMyCols, 8*sizeof(int)) xValMsg;
+				*(int*)CkPriorityPtr(xval_msg) = 0;
+				CkSetQueueing(xval_msg, CK_QUEUEING_IFIFO);
+				delete[] xVal;
+				xVal = xval_msg->xVal;
+			}
+			
 		} else {
 			nextRow = new row_attr[nMyRows];
 			arrived_rows = new int[nMyRows];
@@ -262,11 +261,7 @@ public:
 			if (!empty_nondiags) {
 				empty_nondiags = true; // don't send again!
 				// broadcast to other chares of column
-				xValMsg* msg = new (nMyCols, 8*sizeof(int)) xValMsg;
-				memcpy(msg->xVal, xVal, (nMyCols)*sizeof(double));
-				*(int*)CkPriorityPtr(msg) = 0;
-				CkSetQueueing(msg, CK_QUEUEING_IFIFO);
-				lower_section.get_xval(msg);
+				lower_section.get_xval(xval_msg);
 			}
 			if (belowNumDone==first_below_rows+rest_below_rows)
 				finish();
@@ -275,6 +270,7 @@ public:
 	void get_xval(xValMsg* msg)
 	{
 		CmiReference(UsrToEnv(msg));
+		xval_msg = msg;
 		xVal = msg->xVal;
 		xval_got = true;
 		// start computation
@@ -315,7 +311,6 @@ public:
 					xVal[row] = (rhs[row]-val)*(data[rowInd[row+1]-1]);
 					// first depending row is done
 					allDone++;
-					diag_compute(allDone);
 				}
 				// if after diagonal 
 				else if (row>=nMyCols && ( (row<nMyCols+first_below_rows && allDone>first_below_max_col)
@@ -328,6 +323,7 @@ public:
 					arrived_data[row] = val;
 					arrived_is[row] = true;
 				}	
+				diag_compute(allDone);
 			}
 		// nondiag
 		else if (xval_got) {
@@ -343,8 +339,9 @@ public:
 		}
 	}
 	void finish() {
+		if (!diag)
+			CmiFree(UsrToEnv(xval_msg));
 		finished = true;
-		streamer->done(); 
-	//	contribute(CkCallback(CkReductionTarget(Main, reportIn), mainProxy));
+		streamer->done();
 	}
 };
