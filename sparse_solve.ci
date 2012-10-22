@@ -42,7 +42,7 @@ mainmodule sparse_solve {
 							 int rest_below_rows, int rest_below_max_col);
 		entry void get_deps(int size, row_attr deps[size]);
 		entry void get_section(CProxySection_ColumnsSolve, bool, CkGroupID mCastGrpId);
-		entry [threaded, nokeep] void get_xval(xValMsg* msg);
+		entry [threaded] void get_xval(xValMsg* msg);
 	};
 	// for message aggregation streamer
 	message MeshStreamerMessage<ArrayDataItem<RowSum, int> >;

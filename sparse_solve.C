@@ -26,10 +26,7 @@ void pup(PUP::er &p) { p|row; p|val;}
 CProxy_ArrayMeshStreamer<RowSum, int> aggregator;
 
 class xValMsg : public CkMcastBaseMsg, public CMessage_xValMsg
-{
-public:
-	double *xVal; // solution x
-};
+{ public: double *xVal; };
 
 #include "ColumnsSolve.h"
 
@@ -47,14 +44,12 @@ class Main : public CBase_Main
 	double start_time;
 	int total_columns;
 	int total_chares; // all chares after creation
-	bool check;
 	double* xVal;
 	int nElements;
 public:
 	Main(CkArgMsg* m)
 	{
 		char fileName[250];
-		check=false;
 		//Process command-line arguments
 		if(m->argc < 3) {
 			CkPrintf("arguments: num_chares filename\n");
@@ -63,18 +58,6 @@ public:
 		nElements=atoi(m->argv[1]);
 		strcpy(fileName, m->argv[2]);
 		
-		CkPrintf("reading file: %s\n",fileName);	
-		FILE * fp= fopen(fileName, "r");
-		if(fp==NULL)
-		{
-			CkPrintf("file read error!\n");
-			CkExit();
-		}
-		int ncols, tmp, nzl;
-		fscanf(fp,"%d %d %d",&ncols,&tmp,&nzl);
-		fclose(fp);
-
-		total_columns = ncols;
 		//Start the computation
 		CkPrintf("Running ColumnsSolve on %d processors for %d elements\n", CkNumPes(),nElements);
 		mainProxy = thisProxy;
@@ -84,8 +67,6 @@ public:
 		CkArrayOptions opts(nElements);
 		opts.setMap(myMap);
 		arr = CProxy_ColumnsSolve::ckNew(opts);
-		int dimSize = CkNumPes();
-		aggregator = CProxy_ArrayMeshStreamer<RowSum,int>::ckNew(NUM_MESSAGES_BUFFERED,1, &dimSize, arr, 1, -1);
 		setup_input(fileName);
 
 	};
@@ -95,8 +76,8 @@ public:
 		int* rowInd;  // row index of each element
 		int *colsInd; // index of each column in data array, one more than columns for convenience
 		// read input
-		int m,n, nzl;
-		readInput(fileName, data, rowInd, colsInd ,m, n, nzl);
+		int m, nzl;
+		readInput(fileName, data, rowInd, colsInd ,m, total_columns, nzl);
 		// number of local columns
 		int num_loc_cols = (total_columns/nElements);
 		int *lastRowInd = new int[m];
@@ -251,6 +232,9 @@ public:
 		for (int i=0; i<chare_deps.size(); i++) {
 			arr[chare_deps[i].chare_no].get_deps(chare_deps[i].size, chare_deps[i].nextRow);
 		}
+		arr.doneInserting();
+		int dimSize = CkNumPes();
+		aggregator = CProxy_ArrayMeshStreamer<RowSum,int>::ckNew(NUM_MESSAGES_BUFFERED,1, &dimSize, arr, 1, 4);
 		CkPrintf("analysis time:%f\n",total_analysis_time/nElements);
 		CkPrintf("offdiags:%d out of %d nonzeros, fraction:%f\n",offdiags, nzl, offdiags/(double)nzl);
 		CkPrintf("diagdeps:%d out of %d rows, fraction:%f\n",diagdeps, m, diagdeps/(double)m);
@@ -277,7 +261,7 @@ public:
 	{
 		CkCallback startCb(CkIndex_ColumnsSolve::start(), arr);
 		CkCallback endCb(CkIndex_Main::reportIn(), mainProxy);
-		aggregator.init(arr.ckGetArrayID(), startCb, endCb, 1, false);
+		aggregator.init(arr.ckGetArrayID(), startCb, endCb, 1, true);
 		start_time = CmiWallTimer();
 	}
 

@@ -269,7 +269,7 @@ public:
 	}
 	void get_xval(xValMsg* msg)
 	{
-		CmiReference(UsrToEnv(msg));
+//		CmiReference(UsrToEnv(msg));
 		xval_msg = msg;
 		xVal = msg->xVal;
 		xval_got = true;
@@ -339,8 +339,8 @@ public:
 		}
 	}
 	void finish() {
-		if (!diag)
-			CmiFree(UsrToEnv(xval_msg));
+//		if (!diag)
+//			CmiFree(UsrToEnv(xval_msg));
 		finished = true;
 		streamer->done();
 	}
