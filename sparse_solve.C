@@ -5,25 +5,29 @@
 
 #include <stdio.h>
 #include <vector>
+#include <cmath>
+#include <limits>
 #include "charm++.h"
 using namespace std;
 struct row_attr {
-	int chare; // no. of chare waiting
-	int row; // local row index in that chare
+// no. of chare waiting and local row index in that chare
+	int chare, row; 
 	void pup(PUP::er &p) { p|chare; p|row;}
 };
 
-struct RowSum { int row; double val; RowSum(int r, double d):row(r),val(d){} RowSum(){} 
+struct RowSum { int row; double val; RowSum(int r, double d):row(r),val(d){} RowSum(){}
 void pup(PUP::er &p) { p|row; p|val;}
 };
-#include "NDMeshStreamer.h"
+
 #include "sparse_solve.decl.h"
+#include "MessagePool.h"
 #include "ckmulticast.h"
 
+// right hand side is a simple vector full of a constant
+#define B_CONST 1.0
 #define MIN_ENTRIES_PER_X 20
-#define NUM_MESSAGES_BUFFERED 256
+
 /*readonly*/ CProxy_Main mainProxy;
-CProxy_ArrayMeshStreamer<RowSum, int> aggregator;
 
 class xValMsg : public CkMcastBaseMsg, public CMessage_xValMsg
 { public: double *xVal; };
@@ -32,24 +36,26 @@ class xValMsg : public CkMcastBaseMsg, public CMessage_xValMsg
 
 // for each block chare keeps deps
 struct chare_deps_str {
-	int chare_no; // no. of chare
+	int chare_no, size;
 	row_attr* nextRow; // next of each row
-	int size;
 };
 
 /*mainchare*/
-class Main : public CBase_Main
-{
+class Main : public CBase_Main {
 	CProxy_ColumnsSolve arr;
 	double start_time;
-	int total_columns;
-	int total_chares; // all chares after creation
-	double* xVal;
-	int nElements;
+	// total columns of matrix, all chares before and after creation
+	int total_columns, nElements, total_chares;
+	int *all_map;
+	
+	char fileName[250];
+	double* data; // data in columns sparse compressed
+	int* rowInd;  // row index of each element
+	int *colsInd; // index of each column in data array, one more than columns for convenience
+	
 public:
 	Main(CkArgMsg* m)
 	{
-		char fileName[250];
 		//Process command-line arguments
 		if(m->argc < 3) {
 			CkPrintf("arguments: num_chares filename\n");
@@ -70,11 +76,7 @@ public:
 		setup_input(fileName);
 
 	};
-	void setup_input(char* fileName)
-	{
-		 double* data; // data in columns sparse compressed
-		int* rowInd;  // row index of each element
-		int *colsInd; // index of each column in data array, one more than columns for convenience
+	void setup_input(char* fileName) {
 		// read input
 		int m, nzl;
 		readInput(fileName, data, rowInd, colsInd ,m, total_columns, nzl);
@@ -88,15 +90,14 @@ public:
 		int *tmpRow = new int[m+1];
 		bool *tmpDep = new bool[m];
 		int chareNo = nElements;
-		int *map_rows = new int[m];
+		int *map_rows = all_map = new int[m];
 
 		vector<chare_deps_str> chare_deps; // nexts for all block chares
 		row_attr* prev_in_row = new row_attr[m]; // previous chare in that row
-		for (int i=0; i<m; i++)
-			prev_in_row[i].chare = -1;
-		int offdiags = 0;
-		int diagdeps = 0;
-		double total_analysis_time =0;
+		for (int i=0; i<m; i++) prev_in_row[i].chare = -1;
+		
+		int offdiags=0, diagdeps=0;
+
 		CkGroupID mCastGrpId = CProxy_CkMulticastMgr::ckNew();
 		
 		for (int i=0; i<nElements; i++) {
@@ -109,10 +110,9 @@ public:
 			// min entries: constant times number of x values
 			int min_entries = MIN_ENTRIES_PER_X*(endCol-startCol);
 			int indep_row_no=0;
-			double start_analysis = CmiWallTimer();
+
 			reorder(map_rows, indep_row_no, startCol, endCol, prev_in_row,
 					rowInd, colsInd, data, tmpData, tmpRow, tmpCol, tmpDep, chare_deps, i, lastRowInd);
-			total_analysis_time += CmiWallTimer()-start_analysis;
 
 			// last row of next diagonal chare
 			int nextChareLastRow = endCol + (endCol-startCol);
@@ -153,13 +153,11 @@ public:
 			
 			int my_rows = endCol-startCol+firstBelowChunkRows+restBelowChunkRows;
 			
-			arr[i].get_input(entries, my_rows, endCol-startCol, tmpData, tmpCol, tmpRow, tmpDep, true, indep_row_no, 
+			arr[i].getInput(entries, my_rows, endCol-startCol, tmpData, tmpCol, tmpRow, tmpDep, true, indep_row_no, 
 							 firstBelowChunkRows, firstBelowChunkMaxCol, restBelowChunkRows, restBelowChunkMaxCol);
-			
+
 			int dep_cols = endCol-startCol-indep_row_no;
-		//	CkPrintf("nzls:%d deps:%d total:%d frac:%f first_max:%d rest_max:%d first_rows:%d rest_rows:%d\n", entries, dep_cols, 
-		//			endCol-startCol, dep_cols/(double)(endCol-startCol), firstBelowChunkMaxCol, restBelowChunkMaxCol, firstBelowChunkRows
-		//			 ,restBelowChunkRows);
+
 			diagdeps += dep_cols;
 			
 			int tmp_curr_row =0;
@@ -180,8 +178,7 @@ public:
 					// if empty go to next row
 					if (entries == tmpRow[tmp_curr_row]) {
 						curr_row++;
-						if (curr_row==m)
-							break;
+						if (curr_row==m) break;
 						continue;
 					}
 					lastRowInd[curr_row] = j-rowInd[curr_row];
@@ -204,43 +201,35 @@ public:
 					curr_row++;
 					tmp_curr_row++;
 					
-					if (curr_row==m)
-						break;
+					if (curr_row==m) break;
 					
 				}
 				// empty lower diagonal
-				if (entries==0)
-					break;
+				if (entries==0) break;
 				
 				offdiags += entries;
-				// CkPrintf("chare:%d nonzeros:%d\n",chareNo, entries);
 				tmpRow[tmp_curr_row] = entries;
 				chare_deps_str new_chare; new_chare.size=tmp_curr_row; new_chare.chare_no=chareNo;
 				new_chare.nextRow=new row_attr[tmp_curr_row];
 				chare_deps.push_back(new_chare);
 				arr[chareNo].insert();
-				arr[chareNo++].get_input(entries, tmp_curr_row, num_loc_cols, tmpData, tmpCol, tmpRow, tmpDep, false, 0,0,0, 0,0);
+				arr[chareNo++].getInput(entries, tmp_curr_row, num_loc_cols, tmpData, tmpCol, tmpRow, tmpDep, false, 0,0,0, 0,0);
 			}
 			// send section proxy to diag element
-			// printf("max_res_col:%d total:%d\n", restBelowChunkMaxCol, endCol-startCol);
 			CProxySection_ColumnsSolve nondiags = CProxySection_ColumnsSolve::ckNew(arr, lastNoDiagChare, chareNo-1, 1);
 			bool empty_nondiags = false;
 			if(lastNoDiagChare== chareNo)
 				empty_nondiags = true;
-			arr[i].get_section(nondiags, empty_nondiags, mCastGrpId);
+			arr[i].getSection(nondiags, empty_nondiags, mCastGrpId);
+			map_rows += num_loc_cols;
 		}
-		for (int i=0; i<chare_deps.size(); i++) {
-			arr[chare_deps[i].chare_no].get_deps(chare_deps[i].size, chare_deps[i].nextRow);
-		}
+		for (int i=0; i<chare_deps.size(); i++)
+			arr[chare_deps[i].chare_no].getDeps(chare_deps[i].size, chare_deps[i].nextRow);
 		arr.doneInserting();
-		int dimSize = CkNumPes();
-		aggregator = CProxy_ArrayMeshStreamer<RowSum,int>::ckNew(NUM_MESSAGES_BUFFERED,1, &dimSize, arr, 1, 4);
-		CkPrintf("analysis time:%f\n",total_analysis_time/nElements);
-		CkPrintf("offdiags:%d out of %d nonzeros, fraction:%f\n",offdiags, nzl, offdiags/(double)nzl);
-		CkPrintf("diagdeps:%d out of %d rows, fraction:%f\n",diagdeps, m, diagdeps/(double)m);
+//		CkPrintf("offdiags:%d out of %d nonzeros, fraction:%f\n",offdiags, nzl, offdiags/(double)nzl);
+//		CkPrintf("diagdeps:%d out of %d rows, fraction:%f\n",diagdeps, m, diagdeps/(double)m);
 		total_chares = chareNo;
 		arr.init();
-		delete[] map_rows;
 		delete[] lastRowInd;
 		delete[] tmpRow;
 		delete[] tmpData;
@@ -252,23 +241,50 @@ public:
 		delete[] prev_in_row;
 	}
 
-	void reportIn()
-	{
+	void reportIn() {
 		CkPrintf("All done in %f\n",CmiWallTimer()-start_time);
-		CkExit();
+		arr.sendResults();
 	}
-	void initDone(void)
-	{
-		CkCallback startCb(CkIndex_ColumnsSolve::start(), arr);
-		CkCallback endCb(CkIndex_Main::reportIn(), mainProxy);
-		aggregator.init(arr.ckGetArrayID(), startCb, endCb, 1, true);
+	
+	void initDone(void) {
+		arr.start();
 		start_time = CmiWallTimer();
+	}
+	
+	void validate(CkReductionMsg* msg) {
+		double *xVals = (double*) msg->getData();
+		// read input again
+		int m, nzl, num_loc_cols=total_columns/nElements;
+		readInput(fileName, data, rowInd, colsInd ,m, total_columns, nzl);
+		// keep track of 3 infinity norms
+		double max_X=0, max_rowsum=0, max_result=0;
+		// for each chare
+		for (int i=0; i<nElements; i++) {
+			int first_col = i*num_loc_cols;
+			int last_col = (i==nElements-1) ? total_columns : (i+1)*(total_columns/nElements);
+			// for each x value
+			for (int j=first_col; j<last_col; j++) {
+				
+				double sum=0, rowsum=0;
+				for (int k=rowInd[j]; k<rowInd[j+1]; k++) {
+					// find index of required x in new order using global map
+					int colind_start = (colsInd[k]/num_loc_cols)*num_loc_cols;
+					int xindex = colind_start + all_map[colind_start+(colsInd[k]%num_loc_cols)];
+					sum += xVals[xindex]*data[k];
+					rowsum += abs(data[k]);
+				}
+				max_X = max(xVals[j],max_X);
+				max_rowsum = max(rowsum,max_rowsum);
+				max_result = max(sum-B_CONST,max_result);
+			}
+		}
+		CkPrintf("residual=%lf \n",max_result/((max_rowsum*max_X+B_CONST)*total_columns*numeric_limits<double>::epsilon()) );
+		CkExit();
 	}
 
 	void reorder(int *map_rows, int& no_indeps, int startCol, int endCol, row_attr* prev_in_row, int* rowInd,
 				int* colInd, double* data,double* tmpData,int* tmpRow,int* tmpCol,
-				 bool* tmpDep, vector<chare_deps_str> &chare_deps, int chare_no, int *lastRowInd)
-	{
+				 bool* tmpDep, vector<chare_deps_str> &chare_deps, int chare_no, int *lastRowInd) {
 		int size=endCol-startCol;
 		// depend on messages
 		bool *mark_dep = new bool[size];
@@ -321,9 +337,7 @@ public:
 							chare_deps[k].nextRow[prev_in_row[i].row] = tmprattr;
 						}
 					}
-				} else {
-					tmpDep[target_row-no_indeps] = false;
-				}
+				} else	tmpDep[target_row-no_indeps] = false;
 
 				target_row++;
 			}
@@ -331,16 +345,12 @@ public:
 		
 	}
 	void place(int row, int& target_row, int& target_nzls, int *map_rows, int startCol, int* rowInd,
-			   int* colInd, double* data,double *tmpData,int* tmpRow,int* tmpCol, bool* mark_done, int *lastRowInd)
-	{
+			   int* colInd, double* data,double *tmpData,int* tmpRow,int* tmpCol, bool* mark_done, int *lastRowInd) {
 		// place dependencies
 		int j=rowInd[row+1]-2;
 		for (; j>=rowInd[row]+lastRowInd[row]; j--) {
-			if (colInd[j]<startCol || colInd[j]==row)
-				continue;
-			//assert(rowInd[row+1]-2>=rowInd[row]);
-			//assert(lastRowInd[row]>=0);
-			//assert(colInd[j]<row && colInd[j]>=startCol);
+			if (colInd[j]<startCol || colInd[j]==row) continue;
+			
 			if (!mark_done[colInd[j]-startCol]) {
 				place(colInd[j], target_row, target_nzls, map_rows, startCol, rowInd,
 					  colInd, data, tmpData, tmpRow, tmpCol, mark_done, lastRowInd);
@@ -358,8 +368,7 @@ public:
 		target_row++;
 			
 	}
-	int getBelowSize(int *rowInd, int* colInd,int endCol,int nextChareFirstRow, int nextChareLastRow, int* lastRowInd) 
-	{
+	int getBelowSize(int *rowInd, int* colInd,int endCol,int nextChareFirstRow, int nextChareLastRow, int* lastRowInd) {
 		int size=0;
 		for (int i=nextChareFirstRow; i<nextChareLastRow; i++) {
 			int j=rowInd[i]+lastRowInd[i];
@@ -372,8 +381,7 @@ public:
 	}
 	void addBelowRows(int &row_no, int &max_col, int& entries, int* rowInd, int* colInd, double* data, int* tmpRow,
 					  int* tmpCol, double* tmpData, bool* tmpDep, int startCol,int endCol, int nextChareFirstRow, int nextChareLastRow, 
-					  int* lastRowInd, int* map_rows, vector<chare_deps_str> &chare_deps, row_attr* prev_in_row, int thisChare)
-	{
+					  int* lastRowInd, int* map_rows, vector<chare_deps_str> &chare_deps, row_attr* prev_in_row, int thisChare) {
 		max_col = 0;
 		tmpRow[endCol-startCol+row_no] = entries;
 		for (int i=nextChareFirstRow; i<nextChareLastRow; i++) {
@@ -387,14 +395,14 @@ public:
 				j++;
 			}
 			// if row was empty
-			if (j==rowInd[i]+lastRowInd[i])
-				continue;
+			if (j==rowInd[i]+lastRowInd[i]) continue;
+			
 			if (lastRowInd[i]!=0) {
 				tmpDep[endCol-startCol+row_no] = true;
 				setDependentChare(chare_deps, prev_in_row[i], thisChare, endCol-startCol+row_no);
 			}
-			else
-				tmpDep[endCol-startCol+row_no] = false;
+			else tmpDep[endCol-startCol+row_no] = false;
+			
 			lastRowInd[i] = j-rowInd[i];
 			row_attr rtr; rtr.chare= thisChare; rtr.row=row_no;
 			prev_in_row[i] = rtr;
@@ -402,8 +410,7 @@ public:
 			tmpRow[endCol-startCol+row_no] = entries;
 		}
 	}
-	void setDependentChare(vector<chare_deps_str> &chare_deps, row_attr prev_row, int thisChare, int row_no)
-	{
+	void setDependentChare(vector<chare_deps_str> &chare_deps, row_attr prev_row, int thisChare, int row_no) {
 		for (int k=0; k<chare_deps.size(); k++)
 			if (chare_deps[k].chare_no==prev_row.chare) {
 				row_attr tmprattr; tmprattr.chare=thisChare; tmprattr.row=row_no;
@@ -411,29 +418,25 @@ public:
 			}
 	}
 	void readInput(char * fileName, double * & val, int * &rowind,int * & colptr, int & m, int&  n, int & nzl){
-		int i,j;
+
 		FILE * fp= fopen(fileName, "r");
 		if(fp==NULL)
 			printf("file read error!\n");
 		/*first line */
-		fscanf(fp,"%d",&m);
-		fscanf(fp,"%d",&n);
-		fscanf(fp,"%d",&nzl);
+		fscanf(fp,"%d %d %d", &m, &n, &nzl);
+
 		val = new double[nzl];
 		rowind = new int[m+1];
 		colptr = new int[nzl];
 		/* second line */
-		for(i=0;i<m+1;i++)
+		for(int i=0;i<m+1;i++)
 			fscanf(fp,"%d",&rowind[i]);
 		/*third line */
-		for(i=0;i<nzl;i++)
+		for(int i=0;i<nzl;i++)
 			fscanf(fp,"%d",&colptr[i]);
 		/* fourth line */
-		for(i=0;i<nzl;i++){
+		for(int i=0;i<nzl;i++)
 			fscanf(fp,"%lf",&val[i]);
-			if (val[i]<1.e-10 && val[i]>-1.e-10) 
-				val[i]=0.0;
-		}
 		fclose(fp);
 	}
 };

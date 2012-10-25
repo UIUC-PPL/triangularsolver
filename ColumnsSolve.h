@@ -13,50 +13,42 @@ class ColumnsSolve : public CBase_ColumnsSolve
 {
 	ColumnsSolve_SDAG_CODE;
 	
+	MessagePool msgPool;
+	
 	int* rowInd;  // index of each row, one more for convenience
 	double* data; // data in rows sparse compressed
 	int *colInd; // column index of each element
 	
 	int nMyCols, nMyRows;  // number of columns and rows of this chare
-	bool diag; // is diagonal Chare
+	bool onDiagonalChare; // is diagonal Chare
 	int indep_row_no, first_below_rows, first_below_max_col, rest_below_rows, rest_below_max_col;
 	bool first_below_done, rest_below_done;
 	
 	int allDone, belowNumDone; // done rows
 	bool* row_dep; // is each row dependent
-	CProxySection_ColumnsSolve lower_section; // lower diag chares, for diags
+	CProxySection_ColumnsSolve lower_section; // lower diagonal chares, for diags
 	row_attr* nextRow; // for nondiags
 	
 	bool finished, empty_nondiags, xval_got;
 	xValMsg* xval_msg;
 	
-	int *arrived_rows;
 	double *arrived_data;
 	int arrived_size;
-	bool *arrived_is; // for diag, is item arrived
+	bool *arrived_is; // for diagonal, is item arrived
 	
-	double* xVal; // value of x
+	double* xVal; // values of x
 	double* rhs; // right-hand side for each column if diagonal chare
-	ArrayMeshStreamer<RowSum, int> * streamer; 
+
 public:
-	ColumnsSolve()
-	{
-		arrived_size = 0;
-		allDone=0;
-		belowNumDone=0;
-		finished = false;
-		empty_nondiags = false;
-		first_below_done = false;
-		rest_below_done = false;
-		xval_got = false;
+	ColumnsSolve():msgPool(thisProxy) {
+		arrived_size = allDone = belowNumDone=0;
+		finished=empty_nondiags=first_below_done=rest_below_done=xval_got=false;
 	}
-	ColumnsSolve(CkMigrateMessage *m) {}
+	ColumnsSolve(CkMigrateMessage *m):msgPool(thisProxy) {}
 	
-	void set_input(int num_entries, int num_rows, int num_cols, double m_data[], int m_colInd[], 
+	void setInput(int num_entries, int num_rows, int num_cols, double m_data[], int m_colInd[], 
 				   int m_rowInd[],	bool dep[],	bool m_diag, int m_indep_row_no, int m_first_below_rows,
-				   int m_first_below_max_col, int m_rest_below_rows, int m_rest_below_max_col)
-	{
-		streamer = ((ArrayMeshStreamer<RowSum, int> *)CkLocalBranch(aggregator));
+				   int m_first_below_max_col, int m_rest_below_rows, int m_rest_below_max_col) {
 		data = new double[num_entries];
 		colInd = new int[num_entries];
 		rowInd = new int[num_rows+1];
@@ -67,13 +59,16 @@ public:
 		memcpy(row_dep, dep, (num_rows)*sizeof(bool));
 		nMyCols = num_cols;
 		nMyRows = num_rows;
-		diag = m_diag;
+		onDiagonalChare = m_diag;
 		indep_row_no = m_indep_row_no;
 		xVal = new double[nMyCols];
-		if (diag) {
+		if (onDiagonalChare) {
 			rhs = new double[nMyCols];
 			for (int i=0; i<nMyCols; i++) {
-				rhs[i] = 1.0;
+				// simple right hand side
+				rhs[i] = B_CONST;
+				// invert diagonals to replace division with multiply
+				data[rowInd[i+1]-1] = 1.0/data[rowInd[i+1]-1];
 			}
 			arrived_is = new bool[nMyRows];
 			memset(arrived_is, 0, nMyRows*sizeof(bool));
@@ -82,7 +77,6 @@ public:
 			rest_below_rows = m_rest_below_rows;
 			rest_below_max_col = m_rest_below_max_col;
 			nextRow = new row_attr[first_below_rows+rest_below_rows];
-			arrived_rows = new int[first_below_rows+rest_below_rows];
 			if (!empty_nondiags) {
 				xval_msg = new (nMyCols, 8*sizeof(int)) xValMsg;
 				*(int*)CkPriorityPtr(xval_msg) = 0;
@@ -91,29 +85,23 @@ public:
 				xVal = xval_msg->xVal;
 			}
 			
-		} else {
-			nextRow = new row_attr[nMyRows];
-			arrived_rows = new int[nMyRows];
-		}
+		} else nextRow = new row_attr[nMyRows];
 		
 		arrived_data = new double[nMyRows];
 	}
-	void set_deps(int dep_size, row_attr deps[])
-	{
+	void setDeps(int dep_size, row_attr deps[]) {
 		memcpy(nextRow, deps, (dep_size)*sizeof(row_attr));
 	}
-
-	void set_section(CProxySection_ColumnsSolve nondiags, bool empty_sec, CkGroupID mCastGrpId)
-	{
+	
+	void setSection(CProxySection_ColumnsSolve nondiags, bool empty_sec, CkGroupID mCastGrpId) {
 		lower_section = nondiags;
 		empty_nondiags = empty_sec;
 		if (!empty_nondiags)
 			lower_section.ckSectionDelegate(CProxy_CkMulticastMgr(mCastGrpId).ckLocalBranch());
 	}
 	
-	void indep_compute(int a)
-	{
-		if (diag && indep_row_no) {
+	void myIndepCompute() {
+		if (indep_row_no) {
 			int i=0;
 			// get next chares data faster
 			if (first_below_max_col < indep_row_no) {
@@ -129,16 +117,16 @@ public:
 						if (arrived_is[i]) {
 							val = arrived_data[i];
 							arrived_is[i] = false;
-						}else
-							continue;
+						} else continue;
 					}
 					
 					for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 						val += data[j]*xVal[colInd[j]];
-					streamer->insertData(RowSum(nextRow[i-nMyCols].row, val), nextRow[i-nMyCols].chare);
+					msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 					belowNumDone++;
 				}
 				first_below_done = true;
+				msgPool.flushMsgPool();
 			}
 			// get other chares data
 			if (rest_below_max_col < indep_row_no) {
@@ -154,16 +142,16 @@ public:
 						if (arrived_is[i]) {
 							val = arrived_data[i];
 							arrived_is[i] = false;
-						}else 
-							continue;
+						} else continue;
 					}
 					
 					for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 						val += data[j]*xVal[colInd[j]];
-					streamer->insertData(RowSum(nextRow[i-nMyCols].row, val), nextRow[i-nMyCols].chare);
+					msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 					belowNumDone++;
 				}
 				rest_below_done = true;
+				msgPool.flushMsgPool();
 			}
 			for (; i<indep_row_no; i++) {
 				double val = 0;
@@ -173,10 +161,11 @@ public:
 			}
 			allDone = indep_row_no;
 			diag_compute(allDone);
+			// send dummy message for sdag while to complete
+			if (finished) thisProxy[thisIndex].receiveData(0,NULL,NULL);
 		}
 	}
-	void diag_compute(int start)
-	{
+	void diag_compute(int start) {
 		// if hadn't started yet
 		if (allDone<indep_row_no)
 			return;
@@ -186,8 +175,7 @@ public:
 			if (row_dep[i-indep_row_no]) {
 				if (arrived_is[i])
 					val = arrived_data[i];
-				else
-					break;
+				else break;
 			}
 			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 				val += data[j]*xVal[colInd[j]];
@@ -200,24 +188,23 @@ public:
 					if (arrived_is[i]) {
 						val = arrived_data[i];
 						arrived_is[i] = false;
-					} else
-						continue;
+					} else continue;
 				}
 				
 				for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 					val += data[j]*xVal[colInd[j]];
-				streamer->insertData(RowSum(nextRow[i-nMyCols].row, val), nextRow[i-nMyCols].chare);
+				msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 				belowNumDone++;
 			}
 			first_below_done = true;
+			msgPool.flushMsgPool();
 		}
 		for (; i<=rest_below_max_col; i++) {
 			double val = 0;
 			if (row_dep[i-indep_row_no]) {
 				if (arrived_is[i])
 					val = arrived_data[i];
-				else
-					break;
+				else break;
 			}
 			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 				val += data[j]*xVal[colInd[j]];
@@ -230,16 +217,16 @@ public:
 					if (arrived_is[i]) {
 						val = arrived_data[i];
 						arrived_is[i] = false;
-					}else
-						continue;
+					} else continue;
 				}
 				
 				for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 					val += data[j]*xVal[colInd[j]];
-				streamer->insertData(RowSum(nextRow[i-nMyCols].row, val), nextRow[i-nMyCols].chare);
+				msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 				belowNumDone++;
 			}
 			rest_below_done = true;
+			msgPool.flushMsgPool();
 		}
 		
 		for (; i<nMyCols; i++) {
@@ -247,8 +234,7 @@ public:
 			if (row_dep[i-indep_row_no]) {
 				if (arrived_is[i])
 					val = arrived_data[i];
-				else
-					break;
+				else break;
 			}
 			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 				val += data[j]*xVal[colInd[j]];
@@ -261,87 +247,72 @@ public:
 			if (!empty_nondiags) {
 				empty_nondiags = true; // don't send again!
 				// broadcast to other chares of column
-				lower_section.get_xval(xval_msg);
+				lower_section.getXvals(xval_msg);
 			}
 			if (belowNumDone==first_below_rows+rest_below_rows)
-				finish();
+				finished = true;
 		}
 	}
-	void get_xval(xValMsg* msg)
-	{
-//		CmiReference(UsrToEnv(msg));
-		xval_msg = msg;
-		xVal = msg->xVal;
-		xval_got = true;
-		// start computation
-		nondiag_compute();
-		for (int i=0; i<arrived_size; i++) {
-			double val = arrived_data[i];
-			int row = arrived_rows[i];
-			for (int j=rowInd[row]; j<rowInd[row+1]; j++)
-				val += data[j]*xVal[colInd[j]];
-			streamer->insertData(RowSum(nextRow[row].row, val), nextRow[row].chare);
-			allDone++;
-		}
-		if (allDone==nMyRows && !finished)
-			finish();
-	}
-	void nondiag_compute()
-	{
+
+	void nondiag_compute() {
 		for (int i=0; i<nMyRows; i++) {
-			if (row_dep[i]) {
+			if (row_dep[i])
 				continue;
-			}
 			double val=0;
 			for (int j=rowInd[i]; j<rowInd[i+1]; j++)
 				val += data[j]*xVal[colInd[j]];
-			streamer->insertData(RowSum(nextRow[i].row, val), nextRow[i].chare);
+			//			streamer->insertData(RowSum(nextRow[i].row, val), nextRow[i].chare);
+			msgPool.add(nextRow[i].chare, nextRow[i].row, val);
 			allDone++;			
 		}
+		msgPool.flushMsgPool();
 		if (allDone==nMyRows && !finished)
-			finish();
+			finished = true;
 	}
-	inline virtual void process(const RowSum &rs){
-		double val = rs.val;
-		int row = rs.row;
-		if (diag) {
-				if (row==allDone && row<nMyCols) {
-					for (int j=rowInd[row]; j<rowInd[row+1]-1; j++)
-						val += data[j]*xVal[colInd[j]];
-					xVal[row] = (rhs[row]-val)*(data[rowInd[row+1]-1]);
-					// first depending row is done
-					allDone++;
-				}
-				// if after diagonal 
-				else if (row>=nMyCols && ( (row<nMyCols+first_below_rows && allDone>first_below_max_col)
-										  || (row>=nMyCols+first_below_rows && allDone>rest_below_max_col))) {
-					for (int j=rowInd[row]; j<rowInd[row+1]; j++)
-						val += data[j]*xVal[colInd[j]];
-					streamer->insertData(RowSum(nextRow[row-nMyCols].row, val), nextRow[row-nMyCols].chare);
-					belowNumDone++;
-				} else {
-					arrived_data[row] = val;
-					arrived_is[row] = true;
-				}	
+	void diagReceiveData(int m_size, double m_data[], int m_rowInd[])
+	{
+		for (int i=0; i<m_size; i++) {
+			double val = m_data[i];
+			int row = m_rowInd[i];
+			if (row==allDone && row<nMyCols) {
+				for (int j=rowInd[row]; j<rowInd[row+1]-1; j++)
+					val += data[j]*xVal[colInd[j]];
+				xVal[row] = (rhs[row]-val)*(data[rowInd[row+1]-1]);
+				// first depending row is done
+				allDone++;
 				diag_compute(allDone);
 			}
-		// nondiag
-		else if (xval_got) {
+			// if after diagonal 
+			else if (row>=nMyCols && ( (row<nMyCols+first_below_rows && allDone>first_below_max_col)
+									  || (row>=nMyCols+first_below_rows && allDone>rest_below_max_col))) {
 				for (int j=rowInd[row]; j<rowInd[row+1]; j++)
 					val += data[j]*xVal[colInd[j]];
-				streamer->insertData(RowSum(nextRow[row].row, val), nextRow[row].chare);
-				allDone++;
-			if (allDone==nMyRows && !finished)
-				finish();
-		} else {
-			arrived_data[arrived_size]=val;
-			arrived_rows[arrived_size++]=row;
+				msgPool.add(nextRow[row-nMyCols].chare, nextRow[row-nMyCols].row, val);
+				belowNumDone++;
+			} 
+			else {
+				arrived_data[row] = val;
+				arrived_is[row] = true;
+			}	
 		}
+		msgPool.flushMsgPool();
+		diag_compute(allDone);
 	}
-	void finish() {
-//		if (!diag)
-//			CmiFree(UsrToEnv(xval_msg));
-		finished = true;
-		streamer->done();
+	void nondiagReceiveData(int m_size, double m_data[], int m_rowInd[]){
+		for (int i=0; i<m_size; i++) {
+			double val = m_data[i];
+			int row = m_rowInd[i];
+			for (int j=rowInd[row]; j<rowInd[row+1]; j++)
+				val += data[j]*xVal[colInd[j]];
+			msgPool.add(nextRow[row].chare, nextRow[row].row, val);
+			allDone++;
+		}
+		msgPool.flushMsgPool();
+		if (allDone==nMyRows)
+			finished = true;
+	}
+
+	void sendResults() {
+		contribute(nMyCols*sizeof(double),xVal,CkReduction::concat, CkCallback(CkIndex_Main::validate(NULL), mainProxy));
 	}
 };
