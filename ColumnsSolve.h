@@ -17,50 +17,50 @@ class ColumnsSolve : public CBase_ColumnsSolve
 	
 	int* rowInd;  // index of each row, one more for convenience
 	double* data; // data in rows sparse compressed
-	int *colInd; // column index of each element
+	int* colInd; // column index of each element
 	
 	int nMyCols, nMyRows;  // number of columns and rows of this chare
 	bool onDiagonalChare; // is diagonal Chare
-	int indep_row_no, first_below_rows, first_below_max_col, rest_below_rows, rest_below_max_col;
-	bool first_below_done, rest_below_done;
+	int indepRowNo, firstBelowRows, firstBelowMaxCol, restBelowRows, restBelowMaxCol;
+	bool firstBelowDone, restBelowDone;
 	
 	int allDone, belowNumDone; // done rows
-	bool* row_dep; // is each row dependent
-	CProxySection_ColumnsSolve lower_section; // lower diagonal chares, for diags
-	row_attr* nextRow; // for nondiags
+	bool* rowDep; // is each row dependent
+	CProxySection_ColumnsSolve lowerSection; // lower diagonal chares, for diags
+	rowAttr* nextRow; // for nondiags
 	
-	bool finished, empty_nondiags, xval_got;
-	xValMsg* xval_msg;
+	bool finished, emptyNondiags, xvalGot;
+	xValMsg* xvalMsg;
 	
-	double *arrived_data;
-	int arrived_size;
-	bool *arrived_is; // for diagonal, is item arrived
+	double *arrivedData;
+	int arrivedSize;
+	bool *arrivedIs; // for diagonal, is item arrived
 	
 	double* xVal; // values of x
 	double* rhs; // right-hand side for each column if diagonal chare
 
 public:
 	ColumnsSolve():msgPool(thisProxy) {
-		arrived_size = allDone = belowNumDone=0;
-		finished=empty_nondiags=first_below_done=rest_below_done=xval_got=false;
+		arrivedSize = allDone = belowNumDone=0;
+		finished=emptyNondiags=firstBelowDone=restBelowDone=xvalGot=false;
 	}
 	ColumnsSolve(CkMigrateMessage *m):msgPool(thisProxy) {}
 	
 	void setInput(int num_entries, int num_rows, int num_cols, double m_data[], int m_colInd[], 
-				   int m_rowInd[],	bool dep[],	bool m_diag, int m_indep_row_no, int m_first_below_rows,
-				   int m_first_below_max_col, int m_rest_below_rows, int m_rest_below_max_col) {
+				   int m_rowInd[],	bool dep[],	bool m_diag, int m_indepRowNo, int m_firstBelowRows,
+				   int m_firstBelowMaxCol, int m_restBelowRows, int m_restBelowMaxCol) {
 		data = new double[num_entries];
 		colInd = new int[num_entries];
 		rowInd = new int[num_rows+1];
-		row_dep = new bool[num_rows];
+		rowDep = new bool[num_rows];
 		memcpy(data, m_data, num_entries*sizeof(double));
 		memcpy(colInd, m_colInd, num_entries*sizeof(int));
 		memcpy(rowInd, m_rowInd, (num_rows+1)*sizeof(int));
-		memcpy(row_dep, dep, (num_rows)*sizeof(bool));
+		memcpy(rowDep, dep, (num_rows)*sizeof(bool));
 		nMyCols = num_cols;
 		nMyRows = num_rows;
 		onDiagonalChare = m_diag;
-		indep_row_no = m_indep_row_no;
+		indepRowNo = m_indepRowNo;
 		xVal = new double[nMyCols];
 		if (onDiagonalChare) {
 			rhs = new double[nMyCols];
@@ -70,53 +70,53 @@ public:
 				// invert diagonals to replace division with multiply
 				data[rowInd[i+1]-1] = 1.0/data[rowInd[i+1]-1];
 			}
-			arrived_is = new bool[nMyRows];
-			memset(arrived_is, 0, nMyRows*sizeof(bool));
-			first_below_rows = m_first_below_rows;
-			first_below_max_col = m_first_below_max_col;
-			rest_below_rows = m_rest_below_rows;
-			rest_below_max_col = m_rest_below_max_col;
-			nextRow = new row_attr[first_below_rows+rest_below_rows];
-			if (!empty_nondiags) {
-				xval_msg = new (nMyCols, 8*sizeof(int)) xValMsg;
-				*(int*)CkPriorityPtr(xval_msg) = 0;
-				CkSetQueueing(xval_msg, CK_QUEUEING_IFIFO);
+			arrivedIs = new bool[nMyRows];
+			memset(arrivedIs, 0, nMyRows*sizeof(bool));
+			firstBelowRows = m_firstBelowRows;
+			firstBelowMaxCol = m_firstBelowMaxCol;
+			restBelowRows = m_restBelowRows;
+			restBelowMaxCol = m_restBelowMaxCol;
+			nextRow = new rowAttr[firstBelowRows+restBelowRows];
+			if (!emptyNondiags) {
+				xvalMsg = new (nMyCols, 8*sizeof(int)) xValMsg;
+				*(int*)CkPriorityPtr(xvalMsg) = 0;
+				CkSetQueueing(xvalMsg, CK_QUEUEING_IFIFO);
 				delete[] xVal;
-				xVal = xval_msg->xVal;
+				xVal = xvalMsg->xVal;
 			}
 			
-		} else nextRow = new row_attr[nMyRows];
+		} else nextRow = new rowAttr[nMyRows];
 		
-		arrived_data = new double[nMyRows];
+		arrivedData = new double[nMyRows];
 	}
-	void setDeps(int dep_size, row_attr deps[]) {
-		memcpy(nextRow, deps, (dep_size)*sizeof(row_attr));
+	void setDeps(int dep_size, rowAttr deps[]) {
+		memcpy(nextRow, deps, (dep_size)*sizeof(rowAttr));
 	}
 	
 	void setSection(CProxySection_ColumnsSolve nondiags, bool empty_sec, CkGroupID mCastGrpId) {
-		lower_section = nondiags;
-		empty_nondiags = empty_sec;
-		if (!empty_nondiags)
-			lower_section.ckSectionDelegate(CProxy_CkMulticastMgr(mCastGrpId).ckLocalBranch());
+		lowerSection = nondiags;
+		emptyNondiags = empty_sec;
+		if (!emptyNondiags)
+			lowerSection.ckSectionDelegate(CProxy_CkMulticastMgr(mCastGrpId).ckLocalBranch());
 	}
 	
 	void myIndepCompute() {
-		if (indep_row_no) {
+		if (indepRowNo) {
 			int i=0;
 			// get next chares data faster
-			if (first_below_max_col < indep_row_no) {
-				for (; i<=first_below_max_col; i++) {
+			if (firstBelowMaxCol < indepRowNo) {
+				for (; i<=firstBelowMaxCol; i++) {
 					double val = 0;
 					for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 						val += data[j]*xVal[colInd[j]];
 					xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 				}
-				for (int i=nMyCols; i<nMyCols+first_below_rows; i++) {
+				for (int i=nMyCols; i<nMyCols+firstBelowRows; i++) {
 					double val=0;
-					if (row_dep[i]) {
-						if (arrived_is[i]) {
-							val = arrived_data[i];
-							arrived_is[i] = false;
+					if (rowDep[i]) {
+						if (arrivedIs[i]) {
+							val = arrivedData[i];
+							arrivedIs[i] = false;
 						} else continue;
 					}
 					
@@ -125,23 +125,23 @@ public:
 					msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 					belowNumDone++;
 				}
-				first_below_done = true;
+				firstBelowDone = true;
 				msgPool.flushMsgPool();
 			}
 			// get other chares data
-			if (rest_below_max_col < indep_row_no) {
-				for (; i<=rest_below_max_col; i++) {
+			if (restBelowMaxCol < indepRowNo) {
+				for (; i<=restBelowMaxCol; i++) {
 					double val = 0;
 					for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 						val += data[j]*xVal[colInd[j]];
 					xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 				}
-				for (int i=nMyCols+first_below_rows; i<nMyCols+first_below_rows+rest_below_rows; i++) {
+				for (int i=nMyCols+firstBelowRows; i<nMyCols+firstBelowRows+restBelowRows; i++) {
 					double val=0;
-					if (row_dep[i]) {
-						if (arrived_is[i]) {
-							val = arrived_data[i];
-							arrived_is[i] = false;
+					if (rowDep[i]) {
+						if (arrivedIs[i]) {
+							val = arrivedData[i];
+							arrivedIs[i] = false;
 						} else continue;
 					}
 					
@@ -150,16 +150,16 @@ public:
 					msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 					belowNumDone++;
 				}
-				rest_below_done = true;
+				restBelowDone = true;
 				msgPool.flushMsgPool();
 			}
-			for (; i<indep_row_no; i++) {
+			for (; i<indepRowNo; i++) {
 				double val = 0;
 				for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 					val += data[j]*xVal[colInd[j]];
 				xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 			}
-			allDone = indep_row_no;
+			allDone = indepRowNo;
 			diag_compute(allDone);
 			// send dummy message for sdag while to complete
 			if (finished) thisProxy[thisIndex].receiveData(0,NULL,NULL);
@@ -167,27 +167,27 @@ public:
 	}
 	void diag_compute(int start) {
 		// if hadn't started yet
-		if (allDone<indep_row_no)
+		if (allDone<indepRowNo)
 			return;
 		int i=start;
-		for (; i<=first_below_max_col; i++) {
+		for (; i<=firstBelowMaxCol; i++) {
 			double val = 0;
-			if (row_dep[i-indep_row_no]) {
-				if (arrived_is[i])
-					val = arrived_data[i];
+			if (rowDep[i-indepRowNo]) {
+				if (arrivedIs[i])
+					val = arrivedData[i];
 				else break;
 			}
 			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 				val += data[j]*xVal[colInd[j]];
 			xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 		}
-		if (i> first_below_max_col && !first_below_done) {
-			for (int i=nMyCols; i<nMyCols+first_below_rows; i++) {
+		if (i> firstBelowMaxCol && !firstBelowDone) {
+			for (int i=nMyCols; i<nMyCols+firstBelowRows; i++) {
 				double val=0;
-				if (row_dep[i]) {
-					if (arrived_is[i]) {
-						val = arrived_data[i];
-						arrived_is[i] = false;
+				if (rowDep[i]) {
+					if (arrivedIs[i]) {
+						val = arrivedData[i];
+						arrivedIs[i] = false;
 					} else continue;
 				}
 				
@@ -196,27 +196,27 @@ public:
 				msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 				belowNumDone++;
 			}
-			first_below_done = true;
+			firstBelowDone = true;
 			msgPool.flushMsgPool();
 		}
-		for (; i<=rest_below_max_col; i++) {
+		for (; i<=restBelowMaxCol; i++) {
 			double val = 0;
-			if (row_dep[i-indep_row_no]) {
-				if (arrived_is[i])
-					val = arrived_data[i];
+			if (rowDep[i-indepRowNo]) {
+				if (arrivedIs[i])
+					val = arrivedData[i];
 				else break;
 			}
 			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
 				val += data[j]*xVal[colInd[j]];
 			xVal[i] = (rhs[i]-val)*(data[rowInd[i+1]-1]);
 		}
-		if (i> rest_below_max_col && !rest_below_done) {
-			for (int i=nMyCols+first_below_rows; i<nMyCols+first_below_rows+rest_below_rows; i++) {
+		if (i> restBelowMaxCol && !restBelowDone) {
+			for (int i=nMyCols+firstBelowRows; i<nMyCols+firstBelowRows+restBelowRows; i++) {
 				double val=0;
-				if (row_dep[i]) {
-					if (arrived_is[i]) {
-						val = arrived_data[i];
-						arrived_is[i] = false;
+				if (rowDep[i]) {
+					if (arrivedIs[i]) {
+						val = arrivedData[i];
+						arrivedIs[i] = false;
 					} else continue;
 				}
 				
@@ -225,15 +225,15 @@ public:
 				msgPool.add(nextRow[i-nMyCols].chare, nextRow[i-nMyCols].row, val);
 				belowNumDone++;
 			}
-			rest_below_done = true;
+			restBelowDone = true;
 			msgPool.flushMsgPool();
 		}
 		
 		for (; i<nMyCols; i++) {
 			double val = 0;
-			if (row_dep[i-indep_row_no]) {
-				if (arrived_is[i])
-					val = arrived_data[i];
+			if (rowDep[i-indepRowNo]) {
+				if (arrivedIs[i])
+					val = arrivedData[i];
 				else break;
 			}
 			for (int j=rowInd[i]; j<rowInd[i+1]-1; j++)
@@ -244,19 +244,19 @@ public:
 		
 		if (allDone==nMyCols && !finished) {
 			
-			if (!empty_nondiags) {
-				empty_nondiags = true; // don't send again!
+			if (!emptyNondiags) {
+				emptyNondiags = true; // don't send again!
 				// broadcast to other chares of column
-				lower_section.getXvals(xval_msg);
+				lowerSection.getXvals(xvalMsg);
 			}
-			if (belowNumDone==first_below_rows+rest_below_rows)
+			if (belowNumDone==firstBelowRows+restBelowRows)
 				finished = true;
 		}
 	}
 
-	void nondiag_compute() {
+	void nondiagCompute() {
 		for (int i=0; i<nMyRows; i++) {
-			if (row_dep[i])
+			if (rowDep[i])
 				continue;
 			double val=0;
 			for (int j=rowInd[i]; j<rowInd[i+1]; j++)
@@ -269,6 +269,7 @@ public:
 		if (allDone==nMyRows && !finished)
 			finished = true;
 	}
+
 	void diagReceiveData(int m_size, double m_data[], int m_rowInd[])
 	{
 		for (int i=0; i<m_size; i++) {
@@ -283,16 +284,16 @@ public:
 				diag_compute(allDone);
 			}
 			// if after diagonal 
-			else if (row>=nMyCols && ( (row<nMyCols+first_below_rows && allDone>first_below_max_col)
-									  || (row>=nMyCols+first_below_rows && allDone>rest_below_max_col))) {
+			else if (row>=nMyCols && ( (row<nMyCols+firstBelowRows && allDone>firstBelowMaxCol)
+									  || (row>=nMyCols+firstBelowRows && allDone>restBelowMaxCol))) {
 				for (int j=rowInd[row]; j<rowInd[row+1]; j++)
 					val += data[j]*xVal[colInd[j]];
 				msgPool.add(nextRow[row-nMyCols].chare, nextRow[row-nMyCols].row, val);
 				belowNumDone++;
 			} 
 			else {
-				arrived_data[row] = val;
-				arrived_is[row] = true;
+				arrivedData[row] = val;
+				arrivedIs[row] = true;
 			}	
 		}
 		msgPool.flushMsgPool();

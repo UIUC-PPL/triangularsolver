@@ -19,11 +19,11 @@ mainmodule sparse_solve {
 						   bool diag, int indn, int frs, int fMax, int rrs, int rMax)
 			serial {setInput(nzl, nr, nc, data, colInd, rowInd, dep, diag, indn, frs, fMax, rrs, rMax);}
 			
-			when getDeps(int size, row_attr deps[size])	serial {setDeps(size, deps);}
+			when getDeps(int size, rowAttr deps[size])	serial {setDeps(size, deps);}
 			
 			if(onDiagonalChare)
-			when getSection(CProxySection_ColumnsSolve nondiags, bool empty_sec, CkGroupID mCastGrpId)
-			serial {setSection(nondiags, empty_sec, mCastGrpId);}
+			when getSection(CProxySection_ColumnsSolve nondiags, bool emptySec, CkGroupID mCastGrpId)
+			serial {setSection(nondiags, emptySec, mCastGrpId);}
 			
 			serial { contribute(CkCallback(CkReductionTarget(Main, initDone), mainProxy)); }
 		};
@@ -46,7 +46,7 @@ mainmodule sparse_solve {
 				// if chare doesn't have diagonal part of matrix
 			} else {
 			// wait for x values
-				when getXvals(xValMsg* msg) serial {xVal=msg->xVal; nondiag_compute();}
+				when getXvals(xValMsg* msg) serial {xVal=msg->xVal; nondiagCompute();}
 				// while there are incomplete rows, receive data and compute				
 				while (!finished) {
 					when receiveData(int size, double data[size], int rowInd[size])
@@ -60,7 +60,7 @@ mainmodule sparse_solve {
 		entry void getInput(int nzl, int nr, int nc, double data[nzl], int colInd[nzl], int rowInd[nr+1], bool dep[nr], 
 							 bool diag,	int indn,	int frs, int fMax, int rrs, int rMax);
 		
-		entry void getDeps(int size, row_attr deps[size]);
+		entry void getDeps(int size, rowAttr deps[size]);
 		entry void getSection(CProxySection_ColumnsSolve, bool, CkGroupID mCastGrpId);
 		entry void getXvals(xValMsg* msg);
 		entry void receiveData(int size, double data[size], int rowInd[size]);

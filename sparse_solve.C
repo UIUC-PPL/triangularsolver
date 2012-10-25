@@ -9,13 +9,13 @@
 #include <limits>
 #include "charm++.h"
 using namespace std;
-struct row_attr {
+struct rowAttr {
 // no. of chare waiting and local row index in that chare
 	int chare, row; 
 	void pup(PUP::er &p) { p|chare; p|row;}
 };
 
-struct RowSum { int row; double val; RowSum(int r, double d):row(r),val(d){} RowSum(){}
+struct rowSum { int row; double val; rowSum(int r, double d):row(r),val(d){} rowSum(){} 
 void pup(PUP::er &p) { p|row; p|val;}
 };
 
@@ -35,200 +35,204 @@ class xValMsg : public CkMcastBaseMsg, public CMessage_xValMsg
 #include "ColumnsSolve.h"
 
 // for each block chare keeps deps
-struct chare_deps_str {
-	int chare_no, size;
-	row_attr* nextRow; // next of each row
+struct chareDepsStr {
+	int chareNo; 		// no. of chare
+	rowAttr* nextRow; 	// next of each row
+	int size;
 };
 
 /*mainchare*/
 class Main : public CBase_Main {
 	CProxy_ColumnsSolve arr;
-	double start_time;
+	double startTime;
 	// total columns of matrix, all chares before and after creation
-	int total_columns, nElements, total_chares;
-	int *all_map;
-	
+	int totalColumns, totalChares, nElements;
+	int *allMap;
 	char fileName[250];
 	double* data; // data in columns sparse compressed
 	int* rowInd;  // row index of each element
 	int *colsInd; // index of each column in data array, one more than columns for convenience
-	
 public:
 	Main(CkArgMsg* m)
 	{
 		//Process command-line arguments
 		if(m->argc < 3) {
-			CkPrintf("arguments: num_chares filename\n");
+			CkPrintf("Arguments: numChares fileName\n");
 			CkExit();
 		}
-		nElements=atoi(m->argv[1]);
+		nElements = atoi(m->argv[1]);
 		strcpy(fileName, m->argv[2]);
 		
 		//Start the computation
-		CkPrintf("Running ColumnsSolve on %d processors for %d elements\n", CkNumPes(),nElements);
+		CkPrintf("Running ColumnsSolve on %d processors for %d elements\n", CkNumPes(), nElements);
 		mainProxy = thisProxy;
 		//	CProxy_BlockMap myMap=CProxy_BlockMap::ckNew();
 		CProxy_RRMap myMap=CProxy_RRMap::ckNew();
+
 		//Make a new array using that map
 		CkArrayOptions opts(nElements);
 		opts.setMap(myMap);
 		arr = CProxy_ColumnsSolve::ckNew(opts);
-		setup_input(fileName);
+		setupInput(fileName);
 
 	};
-	void setup_input(char* fileName) {
+
+	void setupInput(char* fileName) {
 		// read input
 		int m, nzl;
-		readInput(fileName, data, rowInd, colsInd ,m, total_columns, nzl);
+		readInput(fileName, data, rowInd, colsInd, m, totalColumns, nzl);
+
 		// number of local columns
-		int num_loc_cols = (total_columns/nElements);
-		int *lastRowInd = new int[m];
+		int numLocCols = (totalColumns/nElements);
+		int* lastRowInd = new int[m];
 		memset(lastRowInd, 0, m*sizeof(int));
 		
-		double *tmpData = new double[nzl]; // too much memory!!!!
-		int *tmpCol = new int[nzl];
-		int *tmpRow = new int[m+1];
-		bool *tmpDep = new bool[m];
+		double* tmpData = new double[nzl]; // too much memory!!!!
+		int* tmpCol = new int[nzl];
+		int* tmpRow = new int[m+1];
+		bool* tmpDep = new bool[m];
 		int chareNo = nElements;
-		int *map_rows = all_map = new int[m];
+		int *mapRows = allMap = new int[m];
 
-		vector<chare_deps_str> chare_deps; // nexts for all block chares
-		row_attr* prev_in_row = new row_attr[m]; // previous chare in that row
-		for (int i=0; i<m; i++) prev_in_row[i].chare = -1;
-		
+		vector<chareDepsStr> chareDeps; 	// nexts for all block chares
+		rowAttr* prevInRow = new rowAttr[m]; 	// previous chare in that row
+		for (int i=0; i<m; i++) prevInRow[i].chare = -1;
+
 		int offdiags=0, diagdeps=0;
-
 		CkGroupID mCastGrpId = CProxy_CkMulticastMgr::ckNew();
 		
 		for (int i=0; i<nElements; i++) {
 			int lastNoDiagChare = chareNo;
-			// first column
-			int startCol = i*num_loc_cols;
-			int endCol = (i+1)*num_loc_cols;
-			if (i==nElements-1)
-				endCol = total_columns;
-			// min entries: constant times number of x values
-			int min_entries = MIN_ENTRIES_PER_X*(endCol-startCol);
-			int indep_row_no=0;
 
-			reorder(map_rows, indep_row_no, startCol, endCol, prev_in_row,
-					rowInd, colsInd, data, tmpData, tmpRow, tmpCol, tmpDep, chare_deps, i, lastRowInd);
+			// first column
+			int startCol = i*numLocCols;
+			int endCol = (i+1)*numLocCols;
+			if (i==nElements-1)
+				endCol = totalColumns;
+
+			// min entries: constant times number of x values
+			int minEntries = MIN_ENTRIES_PER_X*(endCol-startCol);
+			int indepRowNo=0;
+			
+			reorder(mapRows, indepRowNo, startCol, endCol, prevInRow,
+					rowInd, colsInd, data, tmpData, tmpRow, tmpCol, tmpDep, chareDeps, i, lastRowInd);
 
 			// last row of next diagonal chare
 			int nextChareLastRow = endCol + (endCol-startCol);
 			if (i>=nElements-2)
-				nextChareLastRow = total_columns;
-			int curr_row = endCol;
+				nextChareLastRow = totalColumns;
+			int currRow = endCol;
+
 			// get size of below diagonal corresponding to next diagonal Chare
 			int belowSize = getBelowSize(rowInd, colsInd, endCol, endCol, nextChareLastRow, lastRowInd);
 			int entries = tmpRow[endCol-startCol];
-			int firstBelowChunkRows = 0; // number of rows of first chunk below diagonal
-			int firstBelowChunkMaxCol = 0; // last needed column (X value) for this part
-			int restBelowChunkRows = 0; // number of rows after first chunk below diagonal
-			int restBelowChunkMaxCol = 0; // last needed column (X value) for this part
-			if (belowSize<min_entries && belowSize!=0) {				
+			int firstBelowChunkRows = 0; 	// number of rows of first chunk below diagonal
+			int firstBelowChunkMaxCol = 0; 	// last needed column (X value) for this part
+			int restBelowChunkRows = 0; 	// number of rows after first chunk below diagonal
+			int restBelowChunkMaxCol = 0; 	// last needed column (X value) for this part
+			if (belowSize<minEntries && belowSize!=0) {				
 				addBelowRows(firstBelowChunkRows, firstBelowChunkMaxCol, entries, rowInd, colsInd, data, tmpRow,
 							 tmpCol, tmpData, tmpDep, startCol, endCol, endCol, nextChareLastRow, 
-							 lastRowInd, map_rows, chare_deps, prev_in_row, i);
+							 lastRowInd, mapRows, chareDeps, prevInRow, i);
 				offdiags += belowSize;
-				curr_row = nextChareLastRow;
+				currRow = nextChareLastRow;
+
 				// rest of rows
-				belowSize = getBelowSize(rowInd, colsInd, endCol, nextChareLastRow, total_columns, lastRowInd);
-				if (belowSize<min_entries && belowSize!=0) {
+				belowSize = getBelowSize(rowInd, colsInd, endCol, nextChareLastRow, totalColumns, lastRowInd);
+				if (belowSize<minEntries && belowSize!=0) {
 					restBelowChunkRows = firstBelowChunkRows; // for rowInd calcs
 					addBelowRows(restBelowChunkRows, restBelowChunkMaxCol, entries, rowInd, colsInd, data, tmpRow,
-								 tmpCol, tmpData, tmpDep, startCol, endCol, nextChareLastRow, total_columns,
-								 lastRowInd, map_rows, chare_deps, prev_in_row, i);
+								 tmpCol, tmpData, tmpDep, startCol, endCol, nextChareLastRow, totalColumns,
+								 lastRowInd, mapRows, chareDeps, prevInRow, i);
 					restBelowChunkRows -= firstBelowChunkRows;
 					offdiags += belowSize;
-					curr_row = total_columns;
+					currRow = totalColumns;
 				}
 				if (belowSize==0)
-					curr_row = total_columns;
+					currRow = totalColumns;
 			}
 			
-			chare_deps_str new_chare; new_chare.size=firstBelowChunkRows+restBelowChunkRows; new_chare.chare_no=i;
-			new_chare.nextRow=new row_attr[firstBelowChunkRows+restBelowChunkRows];
-			chare_deps.push_back(new_chare);
+			chareDepsStr newChare; newChare.size=firstBelowChunkRows+restBelowChunkRows; newChare.chareNo=i;
+			newChare.nextRow = new rowAttr[firstBelowChunkRows+restBelowChunkRows];
+			chareDeps.push_back(newChare);
 			
-			int my_rows = endCol-startCol+firstBelowChunkRows+restBelowChunkRows;
+			int myRows = endCol-startCol+firstBelowChunkRows+restBelowChunkRows;
 			
-			arr[i].getInput(entries, my_rows, endCol-startCol, tmpData, tmpCol, tmpRow, tmpDep, true, indep_row_no, 
+			arr[i].getInput(entries, myRows, endCol-startCol, tmpData, tmpCol, tmpRow, tmpDep, true, indepRowNo, 
 							 firstBelowChunkRows, firstBelowChunkMaxCol, restBelowChunkRows, restBelowChunkMaxCol);
-
-			int dep_cols = endCol-startCol-indep_row_no;
-
-			diagdeps += dep_cols;
 			
-			int tmp_curr_row =0;
+			int depCols = endCol-startCol-indepRowNo;
 
-			while (curr_row!=m) {
-				int tmp_curr_row =0;
-				entries=0;
-				while (entries<min_entries) {
+			diagdeps += depCols;
+			
+			while (currRow!=m) {
+				int tmpCurrRow = 0;
+				entries = 0;
+				while (entries<minEntries) {
 					
-					tmpRow[tmp_curr_row] = entries;
-					int j = rowInd[curr_row]+lastRowInd[curr_row];
+					tmpRow[tmpCurrRow] = entries;
+					int j = rowInd[currRow]+lastRowInd[currRow];
 					while (colsInd[j]<endCol) {
 						tmpData[entries] = data[j];
-						tmpCol[entries] = map_rows[colsInd[j]-startCol];
+						tmpCol[entries] = mapRows[colsInd[j]-startCol];
 						j++;
 						entries++;
 					}
+
 					// if empty go to next row
-					if (entries == tmpRow[tmp_curr_row]) {
-						curr_row++;
-						if (curr_row==m) break;
+					if (entries==tmpRow[tmpCurrRow]) {
+						currRow++;
+						if (currRow==m) break;
 						continue;
 					}
-					lastRowInd[curr_row] = j-rowInd[curr_row];
-					tmpDep[tmp_curr_row] = false;
+					lastRowInd[currRow] = j-rowInd[currRow];
+					tmpDep[tmpCurrRow] = false;
+
 					// if row is not empty, this is the last
 					// set dependency of previous block chare
-					int last_chare = prev_in_row[curr_row].chare;
-					if (last_chare!=-1) {
-						for (int k=0; k<chare_deps.size(); k++) {
-							if (chare_deps[k].chare_no==last_chare) {
-								row_attr tmprattr; tmprattr.chare=chareNo; tmprattr.row=tmp_curr_row;
-								chare_deps[k].nextRow[prev_in_row[curr_row].row] = tmprattr;
+					int lastChare = prevInRow[currRow].chare;
+					if (lastChare!=-1) {
+						for (int k=0; k<chareDeps.size(); k++) {
+							if (chareDeps[k].chareNo==lastChare) {
+								rowAttr tmprattr; tmprattr.chare=chareNo; tmprattr.row=tmpCurrRow;
+								chareDeps[k].nextRow[prevInRow[currRow].row] = tmprattr;
 							}
 						}
-						tmpDep[tmp_curr_row] = true;
+						tmpDep[tmpCurrRow] = true;
 					}
-					row_attr rtr; rtr.chare= chareNo; rtr.row=tmp_curr_row;
-					prev_in_row[curr_row] = rtr;
+					rowAttr rtr; rtr.chare= chareNo; rtr.row=tmpCurrRow;
+					prevInRow[currRow] = rtr;
 					
-					curr_row++;
-					tmp_curr_row++;
+					currRow++;
+					tmpCurrRow++;
 					
-					if (curr_row==m) break;
+					if (currRow==m) break;
 					
 				}
 				// empty lower diagonal
 				if (entries==0) break;
 				
 				offdiags += entries;
-				tmpRow[tmp_curr_row] = entries;
-				chare_deps_str new_chare; new_chare.size=tmp_curr_row; new_chare.chare_no=chareNo;
-				new_chare.nextRow=new row_attr[tmp_curr_row];
-				chare_deps.push_back(new_chare);
+				// CkPrintf("chare:%d nonzeros:%d\n",chareNo, entries);
+				tmpRow[tmpCurrRow] = entries;
+				chareDepsStr newChare; newChare.size=tmpCurrRow; newChare.chareNo=chareNo;
+				newChare.nextRow = new rowAttr[tmpCurrRow];
+				chareDeps.push_back(newChare);
 				arr[chareNo].insert();
-				arr[chareNo++].getInput(entries, tmp_curr_row, num_loc_cols, tmpData, tmpCol, tmpRow, tmpDep, false, 0,0,0, 0,0);
+				arr[chareNo++].getInput(entries, tmpCurrRow, numLocCols, tmpData, tmpCol, tmpRow, tmpDep, false, 0,0,0, 0,0);
 			}
 			// send section proxy to diag element
 			CProxySection_ColumnsSolve nondiags = CProxySection_ColumnsSolve::ckNew(arr, lastNoDiagChare, chareNo-1, 1);
-			bool empty_nondiags = false;
-			if(lastNoDiagChare== chareNo)
-				empty_nondiags = true;
-			arr[i].getSection(nondiags, empty_nondiags, mCastGrpId);
-			map_rows += num_loc_cols;
+			bool emptyNondiags = lastNoDiagChare == chareNo;
+			mapRows += numLocCols;
+			arr[i].getSection(nondiags, emptyNondiags, mCastGrpId);
 		}
-		for (int i=0; i<chare_deps.size(); i++)
-			arr[chare_deps[i].chare_no].getDeps(chare_deps[i].size, chare_deps[i].nextRow);
+		for (int i=0; i<chareDeps.size(); i++) 
+			arr[chareDeps[i].chareNo].getDeps(chareDeps[i].size, chareDeps[i].nextRow);
 		arr.doneInserting();
 //		CkPrintf("offdiags:%d out of %d nonzeros, fraction:%f\n",offdiags, nzl, offdiags/(double)nzl);
 //		CkPrintf("diagdeps:%d out of %d rows, fraction:%f\n",diagdeps, m, diagdeps/(double)m);
-		total_chares = chareNo;
+		totalChares = chareNo;
 		arr.init();
 		delete[] lastRowInd;
 		delete[] tmpRow;
@@ -238,134 +242,135 @@ public:
 		delete[] data;
 		delete[] rowInd;
 		delete[] colsInd;
-		delete[] prev_in_row;
+		delete[] prevInRow;
 	}
 
 	void reportIn() {
-		CkPrintf("All done in %f\n",CmiWallTimer()-start_time);
+		CkPrintf("All done in %f\n",CmiWallTimer()-startTime);
 		arr.sendResults();
 	}
-	
+
 	void initDone(void) {
 		arr.start();
-		start_time = CmiWallTimer();
+		startTime = CmiWallTimer();
 	}
 	
 	void validate(CkReductionMsg* msg) {
 		double *xVals = (double*) msg->getData();
 		// read input again
-		int m, nzl, num_loc_cols=total_columns/nElements;
-		readInput(fileName, data, rowInd, colsInd ,m, total_columns, nzl);
+		int m, nzl, numLocCols = totalColumns/nElements;
+		readInput(fileName, data, rowInd, colsInd, m, totalColumns, nzl);
 		// keep track of 3 infinity norms
-		double max_X=0, max_rowsum=0, max_result=0;
+		double maxX = 0, maxRowsum = 0, maxResult = 0;
 		// for each chare
 		for (int i=0; i<nElements; i++) {
-			int first_col = i*num_loc_cols;
-			int last_col = (i==nElements-1) ? total_columns : (i+1)*(total_columns/nElements);
+			int first_col = i*numLocCols;
+			int last_col = (i==nElements-1) ? totalColumns : (i+1)*(totalColumns/nElements);
 			// for each x value
 			for (int j=first_col; j<last_col; j++) {
 				
 				double sum=0, rowsum=0;
 				for (int k=rowInd[j]; k<rowInd[j+1]; k++) {
 					// find index of required x in new order using global map
-					int colind_start = (colsInd[k]/num_loc_cols)*num_loc_cols;
-					int xindex = colind_start + all_map[colind_start+(colsInd[k]%num_loc_cols)];
+					int colindStart = min((nElements-1)*numLocCols,(colsInd[k]/numLocCols)*numLocCols);
+					int xindex = colindStart + allMap[colindStart+(colsInd[k]-colindStart)];
 					sum += xVals[xindex]*data[k];
 					rowsum += abs(data[k]);
 				}
-				max_X = max(xVals[j],max_X);
-				max_rowsum = max(rowsum,max_rowsum);
-				max_result = max(sum-B_CONST,max_result);
+				maxX = max(xVals[j],maxX);
+				maxRowsum = max(rowsum,maxRowsum);
+				maxResult = max(sum-B_CONST,maxResult);
 			}
 		}
-		CkPrintf("residual=%lf \n",max_result/((max_rowsum*max_X+B_CONST)*total_columns*numeric_limits<double>::epsilon()) );
+		CkPrintf("residual=%lf \n",maxResult/((maxRowsum*maxX+B_CONST)*totalColumns*numeric_limits<double>::epsilon()) );
 		CkExit();
 	}
 
-	void reorder(int *map_rows, int& no_indeps, int startCol, int endCol, row_attr* prev_in_row, int* rowInd,
-				int* colInd, double* data,double* tmpData,int* tmpRow,int* tmpCol,
-				 bool* tmpDep, vector<chare_deps_str> &chare_deps, int chare_no, int *lastRowInd) {
-		int size=endCol-startCol;
+	void reorder(int *mapRows, int& noIndeps, int startCol, int endCol, rowAttr* prevInRow, int* rowInd,
+			int* colInd, double* data, double* tmpData, int* tmpRow, int* tmpCol,
+			bool* tmpDep, vector<chareDepsStr> &chareDeps, int chareNo, int *lastRowInd) {
+	
+		int size = endCol-startCol;
 		// depend on messages
-		bool *mark_dep = new bool[size];
-		memset(mark_dep, 0, size*sizeof(bool));
+		bool *markDep = new bool[size];
+		memset(markDep, 0, size*sizeof(bool));
 		// done reordering
-		bool *mark_done = new bool[size];
-		memset(mark_done, 0, size*sizeof(bool));
+		bool *markDone = new bool[size];
+		memset(markDone, 0, size*sizeof(bool));
 		
 		// find dependents
 		for (int i=startCol; i<endCol; i++) {
-			if (prev_in_row[i].chare!=-1) { // receives message
-				mark_dep[i-startCol] = true;
+			if (prevInRow[i].chare!=-1) { // receives message
+				markDep[i-startCol] = true;
 				continue;
 			}
 			for (int j=rowInd[i+1]-2; j>=rowInd[i]+lastRowInd[i]; j--) {
 				// depends on dependant row
-				if (mark_dep[colInd[j]-startCol]) {
-					mark_dep[i-startCol] = true;
+				if (markDep[colInd[j]-startCol]) {
+					markDep[i-startCol] = true;
 					break;
 				}
 			}
 		}
 		// place non-deps
-		int target_nzls = 0;
-		int target_row = 0;
+		int targetNzls = 0;
+		int targetRow = 0;
 		tmpRow[0]=0;
 		for (int i=endCol-1; i>=startCol; i--) {
-			if (!mark_dep[i-startCol] && !mark_done[i-startCol])
-				place(i, target_row, target_nzls, map_rows, startCol, rowInd,
-					  colInd, data, tmpData, tmpRow, tmpCol, mark_done, lastRowInd);
+			if (!markDep[i-startCol] && !markDone[i-startCol])
+				place(i, targetRow, targetNzls, mapRows, startCol, rowInd,
+					  colInd, data, tmpData, tmpRow, tmpCol, markDone, lastRowInd);
 		}
 		// number of independent rows
-		no_indeps = target_row;
+		noIndeps = targetRow;
 		
 		// place dependents
 		for (int i=startCol; i<endCol; i++) {
-			if (mark_dep[i-startCol]) {
-				map_rows[i-startCol] = target_row;
+			if (markDep[i-startCol]) {
+				mapRows[i-startCol] = targetRow;
 				for (int j=rowInd[i]+lastRowInd[i]; j<rowInd[i+1]; j++) {
-					tmpData[target_nzls] = data[j];
-					tmpCol[target_nzls] = map_rows[colInd[j]-startCol];
-					target_nzls++;
+					tmpData[targetNzls] = data[j];
+					tmpCol[targetNzls] = mapRows[colInd[j]-startCol];
+					targetNzls++;
 				}
-				tmpRow[target_row+1] = target_nzls;
-				if (prev_in_row[i].chare!=-1) {
-					tmpDep[target_row-no_indeps] = true;
-					for (int k=0; k<chare_deps.size(); k++) {
-						if (chare_deps[k].chare_no==prev_in_row[i].chare) {
-							row_attr tmprattr; tmprattr.chare=chare_no; tmprattr.row=target_row;
-							chare_deps[k].nextRow[prev_in_row[i].row] = tmprattr;
+				tmpRow[targetRow+1] = targetNzls;
+				if (prevInRow[i].chare!=-1) {
+					tmpDep[targetRow-noIndeps] = true;
+					for (int k=0; k<chareDeps.size(); k++) {
+						if (chareDeps[k].chareNo==prevInRow[i].chare) {
+							rowAttr tmprattr; tmprattr.chare=chareNo; tmprattr.row=targetRow;
+							chareDeps[k].nextRow[prevInRow[i].row] = tmprattr;
 						}
 					}
-				} else	tmpDep[target_row-no_indeps] = false;
+				} else	tmpDep[targetRow-noIndeps] = false;
 
-				target_row++;
+				targetRow++;
 			}
 		}
 		
 	}
-	void place(int row, int& target_row, int& target_nzls, int *map_rows, int startCol, int* rowInd,
-			   int* colInd, double* data,double *tmpData,int* tmpRow,int* tmpCol, bool* mark_done, int *lastRowInd) {
+	void place(int row, int& targetRow, int& targetNzls, int *mapRows, int startCol, int* rowInd,
+			   int* colInd, double* data,double *tmpData,int* tmpRow,int* tmpCol, bool* markDone, int *lastRowInd) {
 		// place dependencies
 		int j=rowInd[row+1]-2;
 		for (; j>=rowInd[row]+lastRowInd[row]; j--) {
 			if (colInd[j]<startCol || colInd[j]==row) continue;
 			
-			if (!mark_done[colInd[j]-startCol]) {
-				place(colInd[j], target_row, target_nzls, map_rows, startCol, rowInd,
-					  colInd, data, tmpData, tmpRow, tmpCol, mark_done, lastRowInd);
+			if (!markDone[colInd[j]-startCol]) {
+				place(colInd[j], targetRow, targetNzls, mapRows, startCol, rowInd,
+					  colInd, data, tmpData, tmpRow, tmpCol, markDone, lastRowInd);
 			}
 		}
-		map_rows[row-startCol] = target_row;
-		mark_done[row-startCol] = true;
+		mapRows[row-startCol] = targetRow;
+		markDone[row-startCol] = true;
 		
 		for (int j= rowInd[row]+lastRowInd[row]; j<rowInd[row+1]; j++) {
-			tmpData[target_nzls] = data[j];
-			tmpCol[target_nzls] = map_rows[colInd[j]-startCol];
-			target_nzls++;
+			tmpData[targetNzls] = data[j];
+			tmpCol[targetNzls] = mapRows[colInd[j]-startCol];
+			targetNzls++;
 		}
-		tmpRow[target_row+1] = target_nzls;
-		target_row++;
+		tmpRow[targetRow+1] = targetNzls;
+		targetRow++;
 			
 	}
 	int getBelowSize(int *rowInd, int* colInd,int endCol,int nextChareFirstRow, int nextChareLastRow, int* lastRowInd) {
@@ -379,18 +384,18 @@ public:
 		}
 		return size;
 	}
-	void addBelowRows(int &row_no, int &max_col, int& entries, int* rowInd, int* colInd, double* data, int* tmpRow,
+	void addBelowRows(int &rowNo, int &maxCol, int& entries, int* rowInd, int* colInd, double* data, int* tmpRow,
 					  int* tmpCol, double* tmpData, bool* tmpDep, int startCol,int endCol, int nextChareFirstRow, int nextChareLastRow, 
-					  int* lastRowInd, int* map_rows, vector<chare_deps_str> &chare_deps, row_attr* prev_in_row, int thisChare) {
-		max_col = 0;
-		tmpRow[endCol-startCol+row_no] = entries;
+					  int* lastRowInd, int* mapRows, vector<chareDepsStr> &chareDeps, rowAttr* prevInRow, int thisChare) {
+		maxCol = 0;
+		tmpRow[endCol-startCol+rowNo] = entries;
 		for (int i=nextChareFirstRow; i<nextChareLastRow; i++) {
 			int j=rowInd[i]+lastRowInd[i];
 			while (colInd[j]<endCol) {
 				tmpData[entries] = data[j];
-				tmpCol[entries] = map_rows[colInd[j]-startCol];
-				if (tmpCol[entries]>max_col)
-					max_col = tmpCol[entries];
+				tmpCol[entries] = mapRows[colInd[j]-startCol];
+				if (tmpCol[entries]>maxCol)
+					maxCol = tmpCol[entries];
 				entries++;
 				j++;
 			}
@@ -398,25 +403,28 @@ public:
 			if (j==rowInd[i]+lastRowInd[i]) continue;
 			
 			if (lastRowInd[i]!=0) {
-				tmpDep[endCol-startCol+row_no] = true;
-				setDependentChare(chare_deps, prev_in_row[i], thisChare, endCol-startCol+row_no);
+				tmpDep[endCol-startCol+rowNo] = true;
+				setDependentChare(chareDeps, prevInRow[i], thisChare, endCol-startCol+rowNo);
 			}
-			else tmpDep[endCol-startCol+row_no] = false;
+			else tmpDep[endCol-startCol+rowNo] = false;
 			
 			lastRowInd[i] = j-rowInd[i];
-			row_attr rtr; rtr.chare= thisChare; rtr.row=row_no;
-			prev_in_row[i] = rtr;
-			row_no++;
-			tmpRow[endCol-startCol+row_no] = entries;
+			rowAttr rtr; rtr.chare= thisChare; rtr.row=rowNo;
+			prevInRow[i] = rtr;
+			rowNo++;
+			tmpRow[endCol-startCol+rowNo] = entries;
 		}
 	}
-	void setDependentChare(vector<chare_deps_str> &chare_deps, row_attr prev_row, int thisChare, int row_no) {
-		for (int k=0; k<chare_deps.size(); k++)
-			if (chare_deps[k].chare_no==prev_row.chare) {
-				row_attr tmprattr; tmprattr.chare=thisChare; tmprattr.row=row_no;
-				chare_deps[k].nextRow[prev_row.row] = tmprattr;
+
+	void setDependentChare(vector<chareDepsStr> &chareDeps, rowAttr prevRow, int thisChare, int rowNo)
+	{
+		for (int k=0; k<chareDeps.size(); k++)
+			if (chareDeps[k].chareNo==prevRow.chare) {
+				rowAttr tmprattr; tmprattr.chare=thisChare; tmprattr.row=rowNo;
+				chareDeps[k].nextRow[prevRow.row] = tmprattr;
 			}
 	}
+
 	void readInput(char * fileName, double * & val, int * &rowind,int * & colptr, int & m, int&  n, int & nzl){
 
 		FILE * fp= fopen(fileName, "r");
