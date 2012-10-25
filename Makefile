@@ -1,5 +1,5 @@
 CHARMHOME ?= $(HOME)/charm
-CHARMC    ?= $(CHARMDIR)/bin/charmc $(OPTS)
+CHARMC    ?= $(CHARMHOME)/bin/charmc $(OPTS)
 
 OBJS = sparse_solve.o 
 
