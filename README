@@ -1,0 +1,7 @@
+Sparse Triangular Solver
+
+sparse solve.ci -- contains the parallel control flow; focus on start()
+function.
+
+sparse solve.C -- reads and analyzes input matrix, ini- tializes solver and
+verifies solution
