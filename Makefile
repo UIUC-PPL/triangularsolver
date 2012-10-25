@@ -17,4 +17,4 @@ clean:
 sparse_solve.o: sparse_solve.C ColumnsSolve.h sparse_solve.decl.h MessagePool.h
 	$(CHARMC) -c sparse_solve.C
 test: all
-	./sparse_solve 2 ./nv_example.rcm
+	./charmrun +p4 ./sparse_solve 2 ./nv_example.rcm
